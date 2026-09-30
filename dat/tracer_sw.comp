@@ -1,0 +1,26 @@
+#version 460
+#include "core.glsl"
+#include "tracer_core.glsl"
+layout(std430, push_constant) uniform Push_T {
+  Sw_pcd Data;
+} Push;
+layout(local_size_x = TRACER_SW_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+#define _IMG (_images_rgba8[nonuniformEXT(Push.Data.ImageStorageHandle)])
+void main() {
+  Sw_pcd data = Push.Data;
+  uint pixelIdx = uint(gl_GlobalInvocationID.x);
+  uint pixelMax = data.Dimensions.x * data.Dimensions.y;
+  if (pixelIdx >= pixelMax) return;
+  ivec2 imagePos = ivec2(pixelIdx % data.Dimensions.x, pixelIdx / data.Dimensions.x);
+  uint raysPerPixel = 1 << data.RaysPerPixelPow2;
+  RayBuffer rayBuffer = RayBuffer(data.RayBuffer);
+  vec4 accum = vec4(0.0);
+  for (uint i = 0; i < raysPerPixel; i++) {
+    uint rayIdx = pixelIdx * raysPerPixel + i;
+    Ray ray = rayBuffer.Data[rayIdx];
+    accum += ray.Color;
+  }
+  vec4 currentClr = imageLoad(_IMG, imagePos);
+  vec4 blClr = mix(currentClr, accum / raysPerPixel, 1.0 - data.Hyst);
+  imageStore(_IMG, imagePos, blClr);    
+}

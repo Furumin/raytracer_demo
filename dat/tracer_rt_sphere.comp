@@ -1,0 +1,154 @@
+#version 460
+#include "core.glsl"
+#include "tracer_core.glsl"
+layout(std430, push_constant) uniform Push_T {
+  Rt_pcd Data;
+} Push;
+layout(local_size_x = TRACER_RT_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+bool sphereHit(in Ray ray, in Sphere s, out float tMin) {
+  vec3 center = s.Position;
+  vec3 oc = center - ray.Position;
+  float a = dot(ray.Direction, ray.Direction);
+  float h = dot(ray.Direction, oc);
+  float c = dot(oc, oc) - s.Radius * s.Radius;
+  float disc = h * h - a * c;
+  if (disc < 0) return false;
+
+  float sqf = sqrt(disc);
+  float r = (h - sqf) / a;
+  if (!(r >= 0.0f && r <= ray.T)) {
+    r = (h + sqf) / a;
+    if (!((r >= 0.0f && r <= ray.T))) {
+      return false;
+    }
+  }
+
+  // hit
+  tMin = r;
+  return true;
+}
+// with code from
+// https://github.com/jbikker/tinybvh/blob/dev/kernels/traverse_bvh2.cl
+bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
+  const vec3 rD = 1.0 / ray.Direction;
+  const vec3 rO = ray.Position * -rD;
+  const float oldHit = ray.T;
+  float hit = oldHit;
+  uint nodeIdx = 0;
+  uint stack[24];
+  uint stackPtr = 0;
+  while (true) {
+    if ((nodeIdx & 0x80000000) != 0) {
+      // found hit! this BVH only contains spheres, so no need to check type
+      uint thisObjId = nodeIdx & 0xffffff;
+      Object obj = objBuffer.Data[thisObjId];
+      Sphere s;
+      s.Position = vec3(obj.Transform[3], obj.Transform[7], obj.Transform[11]);
+      s.Radius = obj.Transform[0];
+      float t;
+      bool h = sphereHit(ray, s, t);
+      if (h && t < hit) {
+	hit = t;
+	objId = thisObjId;
+	hitSphereCenter = s.Position;
+	materialIndex = obj.MaterialIndex;
+	tMin = hit;
+      }
+      if (stackPtr == 0) break;
+      nodeIdx = stack[--stackPtr];
+      continue;
+    } else {
+      Bvh2 n = bvhBuffer.Data[nodeIdx];
+      const vec4 lmin = n.lmin, lmax = n.lmax;
+      const vec4 rmin = n.rmin, rmax = n.rmax;
+      uint left = floatBitsToUint( lmin.w ), right = floatBitsToUint( lmax.w );
+      const vec3 t1a = fma( lmin.xyz, rD, rO ), t2a = fma( lmax.xyz, rD, rO );
+      const vec3 t1b = fma( rmin.xyz, rD, rO ), t2b = fma( rmax.xyz, rD, rO );
+      const vec3 minta = min( t1a, t2a ), maxta = max( t1a, t2a );
+      const vec3 mintb = min( t1b, t2b ), maxtb = max( t1b, t2b );
+      const float tmina = max( max( max( minta.x, minta.y ), minta.z ), 0 );
+      const float tminb = max( max( max( mintb.x, mintb.y ), mintb.z ), 0 );
+      const float tmaxa = min( min( min( maxta.x, maxta.y ), maxta.z ), hit );
+      const float tmaxb = min( min( min( maxtb.x, maxtb.y ), maxtb.z ), hit );
+      const bool hitA = tmina <= tmaxa, hitB = tminb <= tmaxb;
+      if (hitA && hitB) {
+	// add furthest hit first, nearest hit at top of stack
+	  uint near = left, far = right;
+	  if (tminb < tmina) near = right, far = left;
+	  stack[stackPtr++] = far, nodeIdx = near;
+	}
+      else if (hitA) nodeIdx = left;
+      else if (hitB) nodeIdx = right;
+      else { if (stackPtr == 0) break; nodeIdx = stack[--stackPtr]; }
+    }
+  }
+  return hit < oldHit;
+}
+void main() {
+  uint rayIdx = uint(gl_GlobalInvocationID.x);
+  Rt_pcd data = Push.Data;
+  if (rayIdx >= data.RayCount) return;
+  Ray ray;
+  Camera c = CameraBuffer(data.CameraPointer).Data;
+  RayBuffer rayBuffer = RayBuffer(data.Buffers[RT_PCD_RAY_BUF]);
+  BvhBuffer bvhBuffer = BvhBuffer(data.Buffers[RT_PCD_TLAS_BUF]);
+  HitBuffer hitBuffer = HitBuffer(data.Buffers[RT_PCD_HIT_BUF]);
+  if (data.Depth == 0) {
+    // populate ray buffer, default hit records
+    ray.Position = c.Position;
+    vec2 imagePixelPos = vec2(imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2));
+    uint rayI = rayIdx & data.RaysPerPixelPow2;
+    imagePixelPos += 0.5 * (randomFloatNorm(data.Hash + rayI));
+    imagePixelPos += 0.5 * (randomFloatNorm(hash1(data.Hash + rayI)));
+    vec3 pixelPos = rayDirFromPixelPos(c, imagePixelPos);
+    ray.Direction = pixelPos - ray.Position;
+    ray.Data = 0;
+    ray.Color = vec4(1.0);
+    rayBuffer.Data[rayIdx] = ray;
+    Hit_record h;
+    h.HitPosition = vec3(FLOAT_INF);
+    h.Data = 0;
+    h.UV = vec2(0.0);
+    h.Normal = vec2(0.0);
+    hitBuffer.Data[rayIdx] = h;
+  } else {
+    // fetch ray
+    ray = rayBuffer.Data[rayIdx];
+  }
+  ray.T = FLOAT_INF;
+      
+  uint rayDepth = ray.Data >> 27;
+  if (rayDepth != data.Depth) return;
+
+  uint objId = 0x80000000;
+  bool hit = false;
+  float tMin = -FLOAT_INF;
+  ObjectBuffer objectBuffer = ObjectBuffer(data.Buffers[RT_PCD_OBJ_BUF]);
+  vec3 sphereCenter;
+  uint materialIndex;
+  hit = traverse(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex);
+  Hit_record h;
+  if (hit) {
+    ray.T = tMin;
+    // increment depth
+    rayDepth++;
+    ray.Data &= ~((32 << 27));
+    ray.Data |= (rayDepth << 27);
+    h.HitPosition = ray.Position + ray.Direction * ray.T;
+    h.Data = 0;
+    h.UV = vec2(0.0);
+    vec3 normal = normalize(h.HitPosition - sphereCenter);
+    float zSign = sign(normal.z);
+    uint nY = floatBitsToUint(normal.y);
+    nY &= (~1);
+    nY |= (zSign > 0.0 ? 1 : 0);
+    normal.y = uintBitsToFloat(nY);
+    h.Normal = normal.xy;
+    
+    h.Data = materialIndex;
+  } else {
+    h.Data = 0xffffffff;
+  }
+  rayBuffer.Data[rayIdx] = ray;
+  hitBuffer.Data[rayIdx] = h;
+}

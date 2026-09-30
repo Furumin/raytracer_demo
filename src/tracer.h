@@ -1,0 +1,99 @@
+#pragma once
+#include "tracer_interop.h"
+
+namespace Tracer {
+#define TRACER_OBJECT_TYPE_COUNT (2)
+  enum Object_type {
+    SPHERE = 0,
+    MESH = 1
+  };
+
+  struct Ray_trace_buffers_create_param {
+    u32 RayCapacity = 32000; // obligatory
+  };
+  
+  struct Ray_trace_buffers {
+    GPU::Pointer RayBuffer; // populated at step 1
+    GPU::Pointer HitBuffer; // populated at step 2
+    u32 Hash;
+    u32 RayCapacity;
+    void
+    Init(const Ray_trace_buffers_create_param &param);
+    void
+    Free();
+  };
+
+  struct Object_buffers_create_param {
+    Material *Materials;
+    u32 MaterialCount;
+    u32 *SphereMaterialIndices;
+    void *SpherePositions; // vec3
+    u32 SpherePositionStride = sizeof (v3); // defa
+    void *SphereRadii; // float
+    u32 SphereRadiusStride = sizeof (float);
+    u32 SphereCount;
+  };
+
+  struct Object_buffers {
+    tinybvh::BVH_GPU CPUTLAS[1];
+    GPU::Pointer GPUTLAS[1];
+    GPU::Pointer ObjectBuffer;
+    GPU::Pointer MaterialBuffer;
+    GPU::Pointer CollisionDataBuffers[TRACER_OBJECT_TYPE_COUNT];
+    u32 ObjectCount;
+    u32 CollisionDataCounts[TRACER_OBJECT_TYPE_COUNT];
+
+    void
+    Init(Scratch *pScratch, const GPU::Cmd_buf *pCmdBuf, const Object_buffers_create_param &param);
+
+    void
+    Free();
+  };
+  
+  class World {
+  private:
+    Scratch_arena mScratchArena;
+    GPU::ImageHandle mTestAttachment;
+    GPU::KernelHandle mTestKernel;
+    GPU::KernelHandle mSphereTestKernel;   // tracer_rt_sphere.comp
+    GPU::KernelHandle mShaderKernel;       // tracer_shade.comp
+    GPU::KernelHandle mScreenWriteKernel;  // tracer_sw.comp
+    
+    // (todo) remove
+    GPU::Pointer mSphereBuffer;
+    
+    // (todo) double-buffer this!
+    Object_buffers mObjectBuffers;
+    
+    Ray_trace_buffers mRayBuffers;
+
+    Camera mCamera;
+
+    tinybvh::BVH_GPU mTLAS = {};
+    /*
+      BLASInstance takes an index in its constructor; this index is into a BVHBase*[] (polymorphic, contains all sorts of different BVH). 
+    */
+    tinybvh::BLASInstance mInstances[2] = {};
+    tinybvh::BVH_GPU mBVHs[2] = {};
+    u64 mTickCount = 0;
+    u32 mProgramSignals = 0;
+    u32 mSphereCount;
+
+    // timestamps
+    u64 mStartTime = 0, mEndTime = 0;
+    
+    GPU::KernelHandle
+      LoadKernel(const char *path);
+    void
+      ReinitCamera(uv2 pixelImageDim);
+    void
+      FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf);
+  public:
+    void
+      Init();
+    void
+      Tick(const GPU::Cmd_buf *pCmdBuf, i32 imageIndex);
+    void
+      OnResize(uv2 newDim);
+  };
+}

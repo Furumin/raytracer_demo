@@ -1,0 +1,49 @@
+BUFFERS
+user works with GPU::Pointer
+possible layout:
+
+64-bit struct,
+4 : 30 : 30
+4: embedded buffer index (16 different buffers possible)
+30 : NodeIndex for offset allocation ( 1 billion simul. allocations possible )
+30 : Offset (each buffer up to 1 GB)
+max size for a buffer: 512 MB
+
+BVH:
+start at TLAS
+
+intersect against TLAS...
+instead of testing triangle, check index against instancebuffer
+
+BVHInstance[]
+struct BVHInstance {
+u32 Type;
+}
+
+Type denotes type of primitive (mesh, sphere, etc). the type also acts as index (which buffer to add this ray to?)
+note that a single ray may be added several times, to several different buffers
+[scalar] struct BlasNode {
+uint IndexTypeEmbedded; 6 : 26, where 6 is type, 26 is object index 
+}
+
+the childinfos in TLAS is an index into BlasNodeBuffer, which contains BlasNode
+
+[scalar] struct ObjectTypeListEntry {
+uint RayIndex;
+BlasNode Node;
+}
+
+for each ray [r] in each objecttypelist [l]
+  get object [o]
+  intersect r, o
+  on hit...
+  atomic compare exchange hit T, and if success, populate hit record buffer
+[scalar] struct HitRecord {
+vec2 NormalXY;
+vec2 UV;
+uint RayIndex;
+uint MaterialIndex;
+}
+
+https://github.com/jbikker/tinybvh/blob/dev/kernels/traverse_bvh2.cl
+

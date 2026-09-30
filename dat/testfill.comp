@@ -1,0 +1,40 @@
+#version 460
+#include "core.glsl"
+#include "tracer_core.glsl"
+layout(std430, buffer_reference, buffer_reference_align = 16) readonly buffer CameraBuffer {
+  Camera Data;
+};
+layout(std430, buffer_reference, buffer_reference_align = 16) readonly buffer SphereBuffer {
+  Sphere Data[];
+};
+layout(std430, push_constant) uniform Push_T {
+  Ray_intersect_pcd Data;
+} Push;
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+#define _IMG (_images_rgba8[nonuniformEXT(Push.Data.ImageStorageHandle)])
+void main() {
+  if (any(greaterThanEqual(gl_GlobalInvocationID.xy, Push.Data.Dimensions))) return;
+  ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+  vec4 currentClr = imageLoad(_IMG, uv);
+  vec4 clr = vec4(1.0, 0.9, 0.2, 1.0);
+  Camera c = CameraBuffer(Push.Data.CameraPointer).Data;
+  SphereBuffer sphereBuffer = SphereBuffer(Push.Data.SphereBufferPointer);
+
+  Ray r;
+  r.Position = c.Position;
+  r.T = FLOAT_INF;
+  vec2 imagePixelPos = vec2(gl_GlobalInvocationID.xy);
+  imagePixelPos += 0.5 * (randomFloatNorm(Push.Data.Hash));
+  imagePixelPos += 0.5 * (randomFloatNorm(hash1(Push.Data.Hash)));
+  vec3 pixelPos = rayDirFromPixelPos(c, imagePixelPos);
+  r.Direction = pixelPos - r.Position;
+  for (uint i = 0; i < Push.Data.SphereCount; i++) {
+    Sphere s = sphereBuffer.Data[i];
+    bool hit = testRaySphere(r, s);
+    if (hit)
+      clr = s.Color;
+  }
+
+  vec4 clrToStore = mix(currentClr, clr, 1.0 - Push.Data.Hyst);
+  imageStore(_IMG, uv, clrToStore);
+}
