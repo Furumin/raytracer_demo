@@ -13,11 +13,11 @@ void main() {
   if (pixelIdx >= pixelMax) return;
   ivec2 imagePos = ivec2(pixelIdx % data.Dimensions.x, pixelIdx / data.Dimensions.x);
   uint raysPerPixel = 1 << data.RaysPerPixelPow2;
-  RayBuffer rayBuffer = RayBuffer(data.RayBuffer);
+  RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
   vec4 accum = vec4(0.0);
   for (uint i = 0; i < raysPerPixel; i++) {
     uint rayIdx = pixelIdx * raysPerPixel + i;
-    Ray ray = rayBuffer.Data[rayIdx];
+    Ray ray = loadRayByIdx(rayBuffer, rayIdx);//rayBuffer.Data[rayIdx];
     accum += ray.Color;
   }
   vec4 currentClr = imageLoad(_IMG, imagePos);

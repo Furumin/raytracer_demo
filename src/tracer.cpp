@@ -5,9 +5,9 @@ namespace Tracer {
   void
   Ray_trace_buffers::Init(const Ray_trace_buffers_create_param &param) {
     this->Hash = 0;
-    this->RayCapacity = param.RayCapacity;
-    this->RayBuffer = GPU::Malloc(sizeof (Ray) * param.RayCapacity, GPU::GPU_PRIVATE);
-    this->HitBuffer = GPU::Malloc(sizeof (Hit_record) * param.RayCapacity, GPU::GPU_PRIVATE);
+    this->RayChunkCapacity = (param.RayCapacity + TRACER_RAY_CHUNK_SIZE) / TRACER_RAY_CHUNK_SIZE;
+    this->RayBuffer = GPU::Malloc(sizeof (Ray_chunk) * this->RayChunkCapacity, GPU::GPU_PRIVATE);
+    this->HitBuffer = GPU::Malloc(sizeof (Hit_record_chunk) * this->RayChunkCapacity, GPU::GPU_PRIVATE);
   }
 
   void
@@ -272,7 +272,7 @@ namespace Tracer {
     const u32 maxDepth = 15;
     const u32 raysPerPixelPow2 = 2;
     const u32 rayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
-    ASSERT(rayCount < mRayBuffers.RayCapacity, "Too many rays!");
+    ASSERT(rayCount < mRayBuffers.RayChunkCapacity * TRACER_RAY_CHUNK_SIZE, "Too many rays!");
     for (u32 i = 0; i < maxDepth; i++) {
       pCmdBuf->SetKernel(mSphereTestKernel);
       Rt_pcd rt = {
@@ -314,7 +314,6 @@ namespace Tracer {
       pCmdBuf->StageBarrier(&barrier, 1);
       pCmdBuf->SetKernel(mShaderKernel);
       pCmdBuf->PushConstants(&rs);
-      // at 210 000 rays, 10 millisecs
       pCmdBuf->Dispatch(c);
       pCmdBuf->StageBarrier(&barrier, 1);
     }

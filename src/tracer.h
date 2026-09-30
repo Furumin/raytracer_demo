@@ -16,7 +16,7 @@ namespace Tracer {
     GPU::Pointer RayBuffer; // populated at step 1
     GPU::Pointer HitBuffer; // populated at step 2
     u32 Hash;
-    u32 RayCapacity;
+    u32 RayChunkCapacity;
     void
     Init(const Ray_trace_buffers_create_param &param);
     void

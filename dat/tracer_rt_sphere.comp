@@ -90,9 +90,10 @@ void main() {
   if (rayIdx >= data.RayCount) return;
   Ray ray;
   Camera c = CameraBuffer(data.CameraPointer).Data;
-  RayBuffer rayBuffer = RayBuffer(data.Buffers[RT_PCD_RAY_BUF]);
+  RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
+  HitChunkBuffer hitBuffer = HitChunkBuffer(data.Buffers[RT_PCD_HIT_BUF]);
   BvhBuffer bvhBuffer = BvhBuffer(data.Buffers[RT_PCD_TLAS_BUF]);
-  HitBuffer hitBuffer = HitBuffer(data.Buffers[RT_PCD_HIT_BUF]);
+  Hit_record h;
   if (data.Depth == 0) {
     // populate ray buffer, default hit records
     ray.Position = c.Position;
@@ -104,16 +105,14 @@ void main() {
     ray.Direction = pixelPos - ray.Position;
     ray.Data = 0;
     ray.Color = vec4(1.0);
-    rayBuffer.Data[rayIdx] = ray;
-    Hit_record h;
+    
     h.HitPosition = vec3(FLOAT_INF);
     h.Data = 0;
     h.UV = vec2(0.0);
     h.Normal = vec2(0.0);
-    hitBuffer.Data[rayIdx] = h;
   } else {
     // fetch ray
-    ray = rayBuffer.Data[rayIdx];
+    ray = loadRayByIdx(rayBuffer, rayIdx);
   }
   ray.T = FLOAT_INF;
       
@@ -127,7 +126,6 @@ void main() {
   vec3 sphereCenter;
   uint materialIndex;
   hit = traverse(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex);
-  Hit_record h;
   if (hit) {
     ray.T = tMin;
     // increment depth
@@ -149,6 +147,6 @@ void main() {
   } else {
     h.Data = 0xffffffff;
   }
-  rayBuffer.Data[rayIdx] = ray;
-  hitBuffer.Data[rayIdx] = h;
+  storeRayByIdx(rayBuffer, rayIdx, ray);
+  storeHitByIdx(hitBuffer, rayIdx, h);
 }

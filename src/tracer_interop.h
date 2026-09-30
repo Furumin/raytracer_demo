@@ -53,6 +53,23 @@ namespace Tracer {
     v4 Color;
   };
 
+#define TRACER_RAY_CHUNK_SIZE_POW2 (5)
+#define TRACER_RAY_CHUNK_SIZE (1 << TRACER_RAY_CHUNK_SIZE_POW2)
+
+  struct Ray_chunk {
+    float PosX[TRACER_RAY_CHUNK_SIZE];
+    float PosY[TRACER_RAY_CHUNK_SIZE];
+    float PosZ[TRACER_RAY_CHUNK_SIZE];
+    u32 Data[TRACER_RAY_CHUNK_SIZE];
+    float DirX[TRACER_RAY_CHUNK_SIZE];
+    float DirY[TRACER_RAY_CHUNK_SIZE];
+    float DirZ[TRACER_RAY_CHUNK_SIZE];
+    float T[TRACER_RAY_CHUNK_SIZE];
+    float ColorX[TRACER_RAY_CHUNK_SIZE];
+    float ColorY[TRACER_RAY_CHUNK_SIZE];
+    float ColorZ[TRACER_RAY_CHUNK_SIZE];
+  };
+
   struct Sphere {
     v3 Position;
     float Radius;
@@ -93,6 +110,17 @@ namespace Tracer {
     u32 Data; // Material index, 0xffffffff means invalid hit record
     v2 UV;
     v2 Normal;
+  };
+
+  struct Hit_record_chunk {
+    float PosX[TRACER_RAY_CHUNK_SIZE];
+    float PosY[TRACER_RAY_CHUNK_SIZE];
+    float PosZ[TRACER_RAY_CHUNK_SIZE];
+    u32 Data[TRACER_RAY_CHUNK_SIZE];
+    float UVX[TRACER_RAY_CHUNK_SIZE];
+    float UVY[TRACER_RAY_CHUNK_SIZE];
+    float NormalX[TRACER_RAY_CHUNK_SIZE];
+    float NormalY[TRACER_RAY_CHUNK_SIZE];
   };
 
   // https://github.com/jbikker/tinybvh/blob/main/tiny_bvh_base.h

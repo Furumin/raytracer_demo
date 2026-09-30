@@ -11,13 +11,13 @@ void main() {
   uint rayIdx = uint(gl_GlobalInvocationID.x);
   if (rayIdx >= data.RayCount) return;
   ivec2 imagePos = imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2);
-  RayBuffer rayBuffer = RayBuffer(data.RayBuffer);
-  HitBuffer hitBuffer = HitBuffer(data.HitBuffer);
+  RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
+  HitChunkBuffer hitBuffer = HitChunkBuffer(data.HitBuffer);
   MaterialBuffer materialBuffer = MaterialBuffer(data.MaterialBuffer);
   vec4 clr = vec4(1.2, 1.6, 1.7, 1.0);
   if (data.Depth != 0) clr = vec4(1.0);
-  Hit_record hit = hitBuffer.Data[rayIdx];
-  Ray ray = rayBuffer.Data[rayIdx];
+  Hit_record hit = loadHitByIdx(hitBuffer, rayIdx);//hitBuffer.Data[rayIdx];
+  Ray ray = loadRayByIdx(rayBuffer, rayIdx);//rayBuffer.Data[rayIdx];
   if (hit.Data != 0xffffffff) {
     Material m = materialBuffer.Data[hit.Data];
     clr.xyz = m.Color;
@@ -81,5 +81,6 @@ private:
      */
   }
   ray.Color *= clr;
-  rayBuffer.Data[rayIdx] = ray;
+  storeRayByIdx(rayBuffer, rayIdx, ray);
+  //  rayBuffer.Data[rayIdx] = ray;
 }
