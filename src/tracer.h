@@ -83,6 +83,11 @@ namespace Tracer {
     u64 mStartTime = 0, mEndTime = 0;
     double mAccumTime = 0;
     double mAccumCounts = 0;
+
+    // amount of previous samples taken per pixel
+    float mAccumCount = 0;
+
+    u32 mFrameBufferInvRelSizePow2 = 1;
     
     GPU::KernelHandle
       LoadKernel(const char *path);

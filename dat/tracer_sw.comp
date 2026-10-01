@@ -17,10 +17,11 @@ void main() {
   vec4 accum = vec4(0.0);
   for (uint i = 0; i < raysPerPixel; i++) {
     uint rayIdx = pixelIdx * raysPerPixel + i;
-    Ray ray = loadRayByIdx(rayBuffer, rayIdx);//rayBuffer.Data[rayIdx];
+    Ray ray = loadRayByIdx(rayBuffer, rayIdx);
     accum += ray.Color;
   }
-  vec4 currentClr = imageLoad(_IMG, imagePos);
-  vec4 blClr = mix(currentClr, accum / raysPerPixel, 1.0 - data.Hyst);
-  imageStore(_IMG, imagePos, blClr);    
+  vec4 accumClr = accum / raysPerPixel;
+  vec4 currentAccumClr = imageLoad(_IMG, imagePos);
+  currentAccumClr += (accumClr - currentAccumClr) / (data.AccumCount + raysPerPixel);
+  imageStore(_IMG, imagePos, currentAccumClr);    
 }

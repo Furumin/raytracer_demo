@@ -198,7 +198,7 @@ namespace Tracer {
   struct Sw_pcd {
     uv2 Dimensions;
     u32 ImageStorageHandle;
-    float Hyst;
+    float AccumCount;
 
     u32 _PADDING0[1];
     u32 RaysPerPixelPow2;

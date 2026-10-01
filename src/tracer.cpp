@@ -165,11 +165,11 @@ namespace Tracer {
     materials[0] = {
       .Color = {0.999, 0.99, 0.999},
       .Roughness = 0.5f,
-      .RefractionIndex = 1.333f
+      .RefractionIndex = 1.5f
     };
     materials[1] = {
       .Color = {1.0, 1.0, 0.0},
-      .Roughness = 0.2f
+      .Roughness = 0.0f
     };
     materials[2] = {
       .Color = {1.0, 0.7, 0.2},
@@ -214,9 +214,9 @@ namespace Tracer {
   World::Init() {
     mScratchArena.Init(MEGA(2));
     uv2 swapchainDim = GPU::GetSwapchainDim();
-    uv2 imgDim = {swapchainDim.x / 2, swapchainDim.y / 2};
+    uv2 imgDim = {swapchainDim.x >> mFrameBufferInvRelSizePow2, swapchainDim.y >> mFrameBufferInvRelSizePow2};
     mTestAttachment = GPU::CreateImage({
-	.Format = VK_FORMAT_R8G8B8A8_UNORM,
+	.Format = VK_FORMAT_R32G32B32A32_SFLOAT,
 	.Extent = {imgDim.x, imgDim.y, 1},
 	.Usage = VK_IMAGE_USAGE_SAMPLED_BIT |
 	VK_IMAGE_USAGE_STORAGE_BIT |
@@ -247,7 +247,15 @@ namespace Tracer {
     }
 
     if (GetKeyState(VK_SPACE)) {
-      mCamera.Position.y += 0.01;
+      mCamera.Position.y += 0.03;
+      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+    }
+    if (GetKeyState('W')) {
+      mCamera.Position.z += 0.03;
+      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+    }
+    if (GetKeyState('D')) {
+      mCamera.Position.x += 0.03;
       mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
     }
 
@@ -285,6 +293,7 @@ namespace Tracer {
     // ray trace
     const u32 maxDepth = 15;
     const u32 raysPerPixelPow2 = 2;
+    const u32 raysPerPixel = 1 << raysPerPixelPow2;
     const u32 rayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
     ASSERT(rayCount < mRayBuffers.RayChunkCapacity * TRACER_RAY_CHUNK_SIZE, "Too many rays!");
     for (u32 i = 0; i < maxDepth; i++) {
@@ -332,13 +341,15 @@ namespace Tracer {
       pCmdBuf->StageBarrier(&barrier, 1);
     }
 
+    mAccumCount = mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL ? 0.0f : mAccumCount;
     Sw_pcd sw = {
       .Dimensions = imageDim,
       .ImageStorageHandle = attachImg->GetStorageImageIndex(),
-      .Hyst = (mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL) ? 0.0f : 0.88f,
+      .AccumCount = mAccumCount,
       .RaysPerPixelPow2 = raysPerPixelPow2,
       .RayBuffer = rayBufferPointer
     };
+    mAccumCount += (float)raysPerPixel;
     
     pCmdBuf->SetKernel(mScreenWriteKernel);
     pCmdBuf->PushConstants(&sw);
@@ -386,8 +397,9 @@ namespace Tracer {
   void
   World::OnResize(uv2 newDim) {
     if (newDim.x > 0) {
-      ResizeImage(mTestAttachment, {newDim.x / 2, newDim.y / 2, 1});
-      ReinitCamera({newDim.x / 2, newDim.y / 2});
+      uv2 fbDim = { newDim.x >> mFrameBufferInvRelSizePow2, newDim.y >> mFrameBufferInvRelSizePow2 };
+      ResizeImage(mTestAttachment, {fbDim.x, fbDim.y, 1});
+      ReinitCamera(fbDim);
     }
   }
 }

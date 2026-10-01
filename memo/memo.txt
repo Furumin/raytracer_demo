@@ -60,5 +60,7 @@ rays traced: 210240. 	time: 12202.083035
 after changing material to AoSoA
 rays traced: 210240. 	avg time: 10979.951685 (19.15 MRays / s)
 
+NOTE: fewer threads => higher ray throughput!
+
 after changing to persistent threads...
 

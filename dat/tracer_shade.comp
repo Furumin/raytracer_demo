@@ -14,11 +14,12 @@ void main() {
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
   HitChunkBuffer hitBuffer = HitChunkBuffer(data.HitBuffer);
   MaterialChunkBuffer materialBuffer = MaterialChunkBuffer(data.MaterialBuffer);
-  vec4 clr = vec4(0.7, 0.8, 0.9, 1.0); // bg
-  if (data.Depth != 0) clr = vec4(1.0);
+  
+  vec4 clr = vec4(0.0, 0.0, 0.0, 1.0); // bg
   Hit_record hit = loadHitByIdx(hitBuffer, rayIdx);
   Ray ray = loadRayByIdx(rayBuffer, rayIdx);
   if (hit.Data != 0xffffffff) {
+    if (data.Depth != 0) clr = vec4(1.0);
     Material m = loadMaterialByIdx(materialBuffer, hit.Data);
     clr.xyz = m.Color;
     vec2 n = hit.Normal;
@@ -28,57 +29,29 @@ void main() {
     vec3 norm = vec3(hit.Normal, dirZ);
     // scatter ray based on material
     const vec3 oldDir = ray.Direction;
-    float frontFaceSign = -sign(dot(norm, oldDir)); // positive if front facing
+    bool frontFace = dot(norm, oldDir) < 0.0; // positive if front facing
     uint hash = data.Hash + hash1(rayIdx);
     ray.Direction = normalize(norm + randomHemisphereVec3(hash, norm) * m.Roughness);
     if (m.RefractionIndex > 0.0) {
-      float ri = (frontFaceSign) > 0.0 ? 1.0 / m.RefractionIndex : m.RefractionIndex;
-      norm *= -frontFaceSign;
+      float ri = frontFace? 1.0 / m.RefractionIndex : m.RefractionIndex;
+      norm = frontFace ? norm : -norm;
       vec3 unitDir = normalize(oldDir);
       float cosT = min(dot(-unitDir, norm), 1.0);
       float sinT = sqrt(1.0 - cosT * cosT);
 
       bool cannotRefl = ri * sinT > 1.0;
       float reflectance;
-      float r0 = (1.0 - m.RefractionIndex) / (1.0 * m.RefractionIndex);
+      float r0 = (1.0 - m.RefractionIndex) / (1.0 + m.RefractionIndex);
       r0 *= r0;
       reflectance = r0 + (1.0 - r0) * pow(1.0 - cosT, 5.0);
       ray.Direction = cannotRefl || reflectance > abs(randomFloatNorm(hash)) ? reflect(unitDir, norm) : refract(unitDir, norm, ri);
     }
 
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
-
-
-    /*
-  bool scatter(const ray &rayIn, const hit_record &rec, scatter_record &srec) const override{
-    srec.attenuation = color(1,1,1);
-    double ri = rec.isFrontFacing() ? (1.0 / refractionIndex) : refractionIndex;
-    vec3 unitDir = normalize(rayIn.direction());
-    double cosT = std::fmin(dot(-unitDir, rec.normal()), 1.0);
-    double sinT = std::sqrt(1.0 - cosT * cosT);
-
-    bool cannotRefl = ri * sinT > 1.0;
-    vec3 dir;
-    if (cannotRefl || reflectance(cosT, ri) > randomDouble()) dir = reflect(unitDir, rec.normal());
-    else dir = refract(unitDir, rec.normal(), ri);
-    
-    srec.skipPdf = true;
-    srec.pdfPtr = nullptr;
-    srec.skipPdfRay = ray(rec.p, dir, rayIn.time());
-    return true;
-  }
-
-private:
-  // relative to air
-  double refractionIndex;
-
-  static double reflectance(double cosine, double refractionIndex) {
-    double r0 = (1 - refractionIndex) / (1 * refractionIndex);
-    r0 *= r0;
-    return r0 + (1 - r0) * std::pow(1 - cosine, 5);
-  }
-
-     */
+  } else {
+    //    clr.r = 0.9 + 0.1 * float(imagePos.y) / float(data.Dimensions.y);
+    //    clr.gb = vec2(0.99, 0.95);
+    clr.rgb = vec3(0.97, 1.0, 1.0);
   }
   ray.Color *= clr;
   storeRayByIdx(rayBuffer, rayIdx, ray);

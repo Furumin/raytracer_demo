@@ -129,7 +129,7 @@ void rtSphereKernel(in uint rayIdx) {
     ray.T = tMin;
     // increment depth
     rayDepth++;
-    ray.Data &= ~((32 << 27));
+    ray.Data &= ~((31 << 27));
     ray.Data |= (rayDepth << 27);
     h.HitPosition = ray.Position + ray.Direction * ray.T;
     h.Data = 0;
