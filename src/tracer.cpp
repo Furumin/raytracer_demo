@@ -35,7 +35,6 @@ namespace Tracer {
     const u32 materialCount = param.MaterialCount;
     totalObjectCount = MIN(totalObjectCount, (1 << TRACER_OBJ_INDEX_BIT_COUNT));
     this->ObjectBuffer = GPU::Malloc(sizeof (Object) * totalObjectCount, GPU::GPU_PRIVATE);
-    this->MaterialBuffer = GPU::Malloc(sizeof (Material) * materialCount, GPU::CPU_ACCESS);
     GPU::Bump_alloc *bumpAlloc = GPU::GetBumpAlloc(GPU::CPU_ACCESS);
     // make objects (only spheres for now)
     Object *objCpuBuffer = pScratch->Push<Object>(totalObjectCount);
@@ -77,7 +76,22 @@ namespace Tracer {
     pCmdBuf->MemCpy(bvhStaging, this->GPUTLAS[Object_type::SPHERE], bvhSize);
 
     // materials
-    this->MaterialBuffer.Write(param.Materials, sizeof (Material) * materialCount);
+    u32 materialChunkCount = (materialCount + TRACER_MATERIAL_CHUNK_SIZE - 1) / TRACER_MATERIAL_CHUNK_SIZE;
+    this->MaterialBuffer = GPU::Malloc(sizeof (Material_chunk) * materialChunkCount, GPU::CPU_ACCESS);
+    Material_chunk *mc = (Material_chunk*)this->MaterialBuffer.Cpu();
+    u32 matI = 0;
+    for (u32 i = 0; i < materialChunkCount; i++) {
+      for (u32 j = 0; j < TRACER_MATERIAL_CHUNK_SIZE; j++, matI++) {
+	if (matI < materialCount) {
+	  mc[i].ColorX[j] = param.Materials[matI].Color.x;
+	  mc[i].ColorY[j] = param.Materials[matI].Color.y;
+	  mc[i].ColorZ[j] = param.Materials[matI].Color.z;
+	  mc[i].Roughness[j] = param.Materials[matI].Roughness;
+	  mc[i].RefractionIndex[j] = param.Materials[matI].RefractionIndex;
+	}
+      }
+    }
+    //    this->MaterialBuffer.Write(param.Materials, sizeof (Material) * materialCount);
   }
 
   void
@@ -358,7 +372,11 @@ namespace Tracer {
     pCmdBuf->ImageBarrier(barriers, 1);
     pCmdBuf->SetTimestamp(false, &mEndTime);
     if (mStartTime && mEndTime) {
-      fprintf(stderr, "rays traced: %u. \ttime: %f\n", rayCount, GPU::GetMicrosecondsElapsed(mStartTime, mEndTime));
+      double t = GPU::GetMicrosecondsElapsed(mStartTime, mEndTime);
+      mAccumTime += t;
+      mAccumCounts += 1.0;
+      double avg = mAccumTime / mAccumCounts;
+      fprintf(stderr, "rays traced: %u. \tavg time: %f\n", rayCount, avg);
     }
     // reset signals
     mProgramSignals = 0;

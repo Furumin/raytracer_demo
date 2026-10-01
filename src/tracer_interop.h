@@ -55,7 +55,8 @@ namespace Tracer {
 
 #define TRACER_RAY_CHUNK_SIZE_POW2 (5)
 #define TRACER_RAY_CHUNK_SIZE (1 << TRACER_RAY_CHUNK_SIZE_POW2)
-
+#define TRACER_MATERIAL_CHUNK_SIZE_POW2 (5)
+#define TRACER_MATERIAL_CHUNK_SIZE (1 << TRACER_MATERIAL_CHUNK_SIZE_POW2)
   struct Ray_chunk {
     float PosX[TRACER_RAY_CHUNK_SIZE];
     float PosY[TRACER_RAY_CHUNK_SIZE];
@@ -87,6 +88,14 @@ namespace Tracer {
     float Roughness;
     float RefractionIndex;
     float _PADDING0[3];
+  };
+
+  struct Material_chunk {
+    float ColorX[TRACER_MATERIAL_CHUNK_SIZE];
+    float ColorY[TRACER_MATERIAL_CHUNK_SIZE];
+    float ColorZ[TRACER_MATERIAL_CHUNK_SIZE];
+    float Roughness[TRACER_MATERIAL_CHUNK_SIZE];
+    float RefractionIndex[TRACER_MATERIAL_CHUNK_SIZE];
   };
 
   /*  struct Mesh {

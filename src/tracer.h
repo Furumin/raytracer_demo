@@ -81,6 +81,8 @@ namespace Tracer {
 
     // timestamps
     u64 mStartTime = 0, mEndTime = 0;
+    double mAccumTime = 0;
+    double mAccumCounts = 0;
     
     GPU::KernelHandle
       LoadKernel(const char *path);

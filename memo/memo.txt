@@ -53,3 +53,12 @@ rays traced: 210240. 	time: 25795.676454  (8.15 MRays / s)
 
 after changing to AoSoA...
 rays traced: 210240. 	time: 13503.333004  (15.57 MRays / s)
+
+when charging...
+rays traced: 210240. 	time: 12202.083035
+
+after changing material to AoSoA
+rays traced: 210240. 	avg time: 10979.951685 (19.15 MRays / s)
+
+after changing to persistent threads...
+

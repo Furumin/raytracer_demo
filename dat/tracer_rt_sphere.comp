@@ -84,8 +84,7 @@ bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint 
   }
   return hit < oldHit;
 }
-void main() {
-  uint rayIdx = uint(gl_GlobalInvocationID.x);
+void rtSphereKernel(in uint rayIdx) {
   Rt_pcd data = Push.Data;
   if (rayIdx >= data.RayCount) return;
   Ray ray;
@@ -148,5 +147,9 @@ void main() {
     h.Data = 0xffffffff;
   }
   storeRayByIdx(rayBuffer, rayIdx, ray);
-  storeHitByIdx(hitBuffer, rayIdx, h);
+  storeHitByIdx(hitBuffer, rayIdx, h);  
+}
+void main() {
+  uint rayIdx = uint(gl_GlobalInvocationID.x);
+  rtSphereKernel(rayIdx);
 }

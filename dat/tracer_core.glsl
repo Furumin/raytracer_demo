@@ -5,6 +5,9 @@ layout(std430, buffer_reference, buffer_reference_align = 16) readonly buffer Ca
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer MaterialBuffer {
   Material Data[];
 };
+layout(std430, buffer_reference, buffer_reference_align = 16) buffer MaterialChunkBuffer {
+  Material_chunk Data[];
+};
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer RayBuffer {
   Ray Data[];
 };
@@ -88,6 +91,11 @@ void getRayChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk) {
   idxInChunk = rayIdx & (TRACER_RAY_CHUNK_SIZE - 1); // modulo
 }
 
+void getMaterialChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk) {
+  chunkIdx = rayIdx >> TRACER_MATERIAL_CHUNK_SIZE_POW2; // division
+  idxInChunk = rayIdx & (TRACER_MATERIAL_CHUNK_SIZE - 1); // modulo
+}
+
 #define _RAY_BUF_ACCESS(prop) buf.Data[chunkIdx]. prop [idxInChunk]
 Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
@@ -158,4 +166,16 @@ void storeHitByIdx(in HitChunkBuffer buf, in uint rayIdx, in Hit_record r) {
 
   _RAY_BUF_ACCESS(NormalX) = r.Normal.x;
   _RAY_BUF_ACCESS(NormalY) = r.Normal.y;
+}
+
+Material loadMaterialByIdx(in MaterialChunkBuffer buf, in uint matIdx) {
+  uint chunkIdx, idxInChunk;
+  getMaterialChunkIdx(matIdx, chunkIdx, idxInChunk);
+  Material m;
+  m.Color.x = _RAY_BUF_ACCESS(ColorX);
+  m.Color.y = _RAY_BUF_ACCESS(ColorY);
+  m.Color.z = _RAY_BUF_ACCESS(ColorZ);
+  m.Roughness = _RAY_BUF_ACCESS(Roughness);
+  m.RefractionIndex = _RAY_BUF_ACCESS(RefractionIndex);
+  return m;
 }
