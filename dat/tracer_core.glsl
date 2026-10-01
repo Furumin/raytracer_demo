@@ -177,5 +177,6 @@ Material loadMaterialByIdx(in MaterialChunkBuffer buf, in uint matIdx) {
   m.Color.z = _RAY_BUF_ACCESS(ColorZ);
   m.Roughness = _RAY_BUF_ACCESS(Roughness);
   m.RefractionIndex = _RAY_BUF_ACCESS(RefractionIndex);
+  m.Flags = _RAY_BUF_ACCESS(Flags);
   return m;
 }

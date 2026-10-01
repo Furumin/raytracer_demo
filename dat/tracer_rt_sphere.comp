@@ -98,8 +98,8 @@ void rtSphereKernel(in uint rayIdx) {
     ray.Position = c.Position;
     vec2 imagePixelPos = vec2(imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2));
     uint rayI = rayIdx & data.RaysPerPixelPow2;
-    imagePixelPos += 0.5 * (randomFloatNorm(data.Hash + rayI));
-    imagePixelPos += 0.5 * (randomFloatNorm(hash1(data.Hash + rayI)));
+    imagePixelPos.x += 0.5 * (randomFloatNorm(data.Hash + rayI));
+    imagePixelPos.y += 0.5 * (randomFloatNorm(hash1(data.Hash + rayI)));
     vec3 pixelPos = rayDirFromPixelPos(c, imagePixelPos);
     ray.Direction = pixelPos - ray.Position;
     ray.Data = 0;
@@ -151,5 +151,8 @@ void rtSphereKernel(in uint rayIdx) {
 }
 void main() {
   uint rayIdx = uint(gl_GlobalInvocationID.x);
-  rtSphereKernel(rayIdx);
+  uint stride = (Push.Data.RayCount + TRACER_RT_COARSE_FACTOR - 1) / TRACER_RT_COARSE_FACTOR;
+  for (uint i = 0; i < TRACER_RT_COARSE_FACTOR; i++) {
+    rtSphereKernel(rayIdx + stride * i);
+  }
 }

@@ -87,7 +87,8 @@ namespace Tracer {
     // amount of previous samples taken per pixel
     float mAccumCount = 0;
 
-    u32 mFrameBufferInvRelSizePow2 = 0;
+    u32 mFrameBufferInvRelSizePow2 = 1;
+    u32 mRaysPerPixelPow2 = 2;
     
     GPU::KernelHandle
       LoadKernel(const char *path);

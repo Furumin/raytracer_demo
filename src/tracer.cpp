@@ -88,6 +88,7 @@ namespace Tracer {
 	  mc[i].ColorZ[j] = param.Materials[matI].Color.z;
 	  mc[i].Roughness[j] = param.Materials[matI].Roughness;
 	  mc[i].RefractionIndex[j] = param.Materials[matI].RefractionIndex;
+	  mc[i].Flags[j] = param.Materials[matI].Flags;
 	}
       }
     }
@@ -133,7 +134,7 @@ namespace Tracer {
   void
   World::FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf) {
     Scratch scratch(&mScratchArena);
-    mSphereCount = 32;
+    mSphereCount = 128;
     mSphereBuffer = GPU::Malloc(sizeof (Sphere) * mSphereCount, GPU::GPU_PRIVATE);
     GPU::Bump_alloc *bumpAlloc = GPU::GetBumpAlloc(GPU::CPU_ACCESS);
     GPU::Pointer staging = bumpAlloc->Bump<Sphere>(mSphereCount);
@@ -148,16 +149,16 @@ namespace Tracer {
       .SpherePositionStride = sizeof (Sphere),
       .SphereRadii = V_(&s[0].Radius),
       .SphereRadiusStride = sizeof (Sphere),
-      .SphereCount = 32
+      .SphereCount = mSphereCount
     };
     s[0] = {
-      .Position = {0, -10000, 0},
-      .Radius = 9995.999f
+      .Position = {0, -1000, 0},
+      .Radius = 998.999f
     };
     materialIndices[0] = 3;
     for (u32 i = 1; i < mSphereCount; i++) {
       s[i].Position.x = -10.0f + (float)(i % 20);
-      s[i].Position.y = 0;
+      s[i].Position.y = i / 30;
       s[i].Position.z = 6 + i / 20;
       s[i].Radius = (float)(2 + i % 7) * 0.1;
       materialIndices[i] = hash1(i) % 3;
@@ -168,12 +169,13 @@ namespace Tracer {
       .RefractionIndex = 1.5f
     };
     materials[1] = {
-      .Color = {1.0, 1.0, 0.0},
-      .Roughness = 0.0f
+      .Color = {1.0, 0.0, 0.0},
+      .Roughness = 0.25f,
+      .Flags = TRACER_MATERIAL_FLAG_METALLIC
     };
     materials[2] = {
       .Color = {1.0, 0.7, 0.2},
-      .Roughness = 0.0001f
+      .Roughness = 0.95f
     };
     materials[3] = {
       .Color = {0.3, 0.39, 0.42},
@@ -232,8 +234,8 @@ namespace Tracer {
     };
     mCamera.Forward = {0, 0, 1};
     mCamera.Up = {0, 1, 0};
-    mCamera.VFov = RadFromDeg(35.0f);
-    mCamera.FocusDistance = 10.0f;
+    mCamera.VFov = RadFromDeg(45.0f);
+    mCamera.FocusDistance = 30.0f;
     ReinitCamera(imgDim);
   }
 
@@ -256,6 +258,9 @@ namespace Tracer {
     }
     if (GetKeyState('D')) {
       mCamera.Position.x += 0.03;
+      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+    }
+    if (GetKeyState('M')) {
       mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
     }
 
@@ -292,15 +297,15 @@ namespace Tracer {
     const u64 rayBufferPointer = mRayBuffers.RayBuffer.Gpu();
     // ray trace
     const u32 maxDepth = 15;
-    const u32 raysPerPixelPow2 = 2;
-    const u32 raysPerPixel = 1 << raysPerPixelPow2;
+    const u32 raysPerPixelPow2 = mRaysPerPixelPow2;
     const u32 rayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
     ASSERT(rayCount < mRayBuffers.RayChunkCapacity * TRACER_RAY_CHUNK_SIZE, "Too many rays!");
+    const u32 hash = (u32)mTickCount / 4;
     for (u32 i = 0; i < maxDepth; i++) {
       pCmdBuf->SetKernel(mSphereTestKernel);
       Rt_pcd rt = {
 	.CameraPointer = camP.Gpu(),
-	.Hash = (u32)mTickCount,
+	.Hash = hash,
 	.Signals = 0,
 	.Dimensions = imageDim,
 	.RaysPerPixelPow2 = raysPerPixelPow2,
@@ -312,14 +317,15 @@ namespace Tracer {
       rt.Buffers[RT_PCD_OBJ_BUF] = mObjectBuffers.ObjectBuffer.Gpu();
       rt.Buffers[RT_PCD_HIT_BUF] = mRayBuffers.HitBuffer.Gpu();
       // ray shade
-      c.x = (rayCount + TRACER_RT_WORKGROUP_SIZE - 1) / TRACER_RT_WORKGROUP_SIZE;;
+      const u32 m = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
+      c.x = (rayCount + m - 1) / m;
       c.y = 1;
       c.z = 1;
       pCmdBuf->PushConstants(&rt);
       pCmdBuf->Dispatch(c);
       Rs_pcd rs = {
 	.Dimensions = imageDim,
-	.Hash = (u32)mTickCount,
+	.Hash = hash,
 	.ImageStorageHandle = attachImg->GetStorageImageIndex(),
 	.Depth = i,
 	.RayCount = rayCount,
@@ -328,6 +334,7 @@ namespace Tracer {
 	.MaterialBuffer = mObjectBuffers.MaterialBuffer.Gpu(),
 	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF]
       };
+      c.x = (rayCount + TRACER_RS_WORKGROUP_SIZE - 1) / TRACER_RS_WORKGROUP_SIZE;
       GPU::Stage_barrier barrier = {
 	.SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 	.SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
@@ -349,7 +356,7 @@ namespace Tracer {
       .RaysPerPixelPow2 = raysPerPixelPow2,
       .RayBuffer = rayBufferPointer
     };
-    mAccumCount += (float)raysPerPixel;
+    mAccumCount += 1;
     
     pCmdBuf->SetKernel(mScreenWriteKernel);
     pCmdBuf->PushConstants(&sw);
@@ -400,6 +407,9 @@ namespace Tracer {
       uv2 fbDim = { newDim.x >> mFrameBufferInvRelSizePow2, newDim.y >> mFrameBufferInvRelSizePow2 };
       ResizeImage(mTestAttachment, {fbDim.x, fbDim.y, 1});
       ReinitCamera(fbDim);
+      // reset averages
+      mAccumTime = 0.0;
+      mAccumCounts = 0.0;
     }
   }
 }

@@ -1,5 +1,3 @@
-#define TRACER_SAMPLES_PER_PIXEL (1)
-
 #if APP_CPP_CODE
 #pragma once
 namespace Tracer {
@@ -83,11 +81,13 @@ namespace Tracer {
   };
 
   // master material struct
+#define TRACER_MATERIAL_FLAG_METALLIC (1)
   struct Material {
     v3 Color;
     float Roughness;
     float RefractionIndex;
-    float _PADDING0[3];
+    u32 Flags;
+    float _PADDING0[2];
   };
 
   struct Material_chunk {
@@ -96,6 +96,7 @@ namespace Tracer {
     float ColorZ[TRACER_MATERIAL_CHUNK_SIZE];
     float Roughness[TRACER_MATERIAL_CHUNK_SIZE];
     float RefractionIndex[TRACER_MATERIAL_CHUNK_SIZE];
+    u32 Flags[TRACER_MATERIAL_CHUNK_SIZE];
   };
 
   /*  struct Mesh {
@@ -157,7 +158,9 @@ namespace Tracer {
     u32 _Padding2[1];
   };
 
-#define TRACER_RT_WORKGROUP_SIZE (256)
+#define TRACER_RT_WORKGROUP_SIZE (64)
+#define TRACER_RT_COARSE_FACTOR (2)
+#define TRACER_RS_WORKGROUP_SIZE (256)
 #define RT_PCD_RAY_BUF (0)
 #define RT_PCD_TLAS_BUF (1)
 #define RT_PCD_OBJ_BUF (2)
