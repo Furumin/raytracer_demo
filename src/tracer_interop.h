@@ -14,7 +14,7 @@ namespace Tracer {
 #endif
 
 #define TRACER_RAY_HIT_UNIFIED (1)
-
+#define TRACER_PERSISTENT_THREADS (0)
   struct Camera {
     v3 Position; // user
     float AspectRatio; // cached, used at runtime
@@ -47,10 +47,10 @@ namespace Tracer {
 
   struct Ray {
     v3 Position;
-    u32 Data; // bottom 5 bits represent depth, rest is an atomic counter
+    u32 Data; // bottom 5 bits represent depth, rest is material index
     v3 Direction; // not necessarily normalized
     float T;
-    v4 Color;
+    v3 Color;
   };
 
 #define TRACER_RAY_CHUNK_SIZE_POW2 (5)
@@ -171,11 +171,12 @@ namespace Tracer {
 #define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
 #define TRACER_RS_WORKGROUP_SIZE (128)
-#define TRACER_RS_COARSE_FACTOR (2)
+#define TRACER_RS_COARSE_FACTOR (1)//(2)
 #define RT_PCD_RAY_BUF (0)
 #define RT_PCD_TLAS_BUF (1)
 #define RT_PCD_OBJ_BUF (2)
 #define RT_PCD_HIT_BUF (3)
+#define RT_PCD_CNT_BUF (4)
   struct Rt_pcd {
     u64 CameraPointer;
     u32 Hash;
@@ -185,10 +186,11 @@ namespace Tracer {
     u32 RaysPerPixelPow2;
     u32 RayCount; // Total ray count
     
-    u64 Buffers[4];
+    u64 Buffers[5];
+    u64 _PADDING0[1];
     
     u32 Depth; // If MSB is asserted, populate ray buffers
-    u32 _PADDING0[3];
+    u32 _PADDING1[3];
   };
 
   // shading
@@ -205,7 +207,9 @@ namespace Tracer {
     u64 HitBuffer;
     u64 MaterialBuffer;
     u64 RayBuffer;
-    u64 _PADDING0[1];
+
+    // include even if unused 
+    u64 GlobalCountBuffer;
   };
 
 #define TRACER_SW_WORKGROUP_SIZE (256)

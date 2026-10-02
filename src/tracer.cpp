@@ -287,7 +287,6 @@ namespace Tracer {
     pCmdBuf->ImageBarrier(barriers, 1);
     
     // Render here
-    uv3 c;
     pCmdBuf->BindDescriptors(VK_PIPELINE_BIND_POINT_COMPUTE);
     const GPU::Image *attachImg = GPU::GetImage(mTestAttachment);
     GPU::Bump_alloc *bmp = GPU::GetBumpAlloc(GPU::CPU_ACCESS);
@@ -301,6 +300,12 @@ namespace Tracer {
     const u32 rayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
     ASSERT(rayCount < mRayBuffers.RayChunkCapacity * TRACER_RAY_CHUNK_SIZE, "Too many rays!");
     const u32 hash = (u32)mTickCount / 4;
+
+    // unused if TRACER_PERSISTENT_THREADS = 0
+    GPU::Pointer globalCountBuffer = bmp->Bump<u32>(1);
+    const u32 defaultCount = 0;
+    globalCountBuffer.Write(&defaultCount, sizeof (u32));
+    
     for (u32 i = 0; i < maxDepth; i++) {
       pCmdBuf->SetKernel(mSphereTestKernel);
       Rt_pcd rt = {
@@ -316,13 +321,19 @@ namespace Tracer {
       rt.Buffers[RT_PCD_TLAS_BUF] = mObjectBuffers.GPUTLAS[Object_type::SPHERE].Gpu();
       rt.Buffers[RT_PCD_OBJ_BUF] = mObjectBuffers.ObjectBuffer.Gpu();
       rt.Buffers[RT_PCD_HIT_BUF] = mRayBuffers.HitBuffer.Gpu();
-      // ray shade
-      u32 m = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
-      c.x = (rayCount + m - 1) / m;
-      c.y = 1;
-      c.z = 1;
+      rt.Buffers[RT_PCD_CNT_BUF] = globalCountBuffer.Gpu();
+      // work group count
+      uv3 wgc;
+      // rays per thread
+      u32 rpt = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
+      wgc.x = (rayCount + rpt - 1) / rpt;
+#if TRACER_PERSISTENT_THREADS
+      wgc.x = 64;
+#endif
+      wgc.y = 1;
+      wgc.z = 1;
       pCmdBuf->PushConstants(&rt);
-      pCmdBuf->Dispatch(c);
+      pCmdBuf->Dispatch(wgc);
       Rs_pcd rs = {
 	.Dimensions = imageDim,
 	.Hash = hash,
@@ -332,10 +343,11 @@ namespace Tracer {
 	.RaysPerPixelPow2 = raysPerPixelPow2,
 	.HitBuffer = rt.Buffers[RT_PCD_HIT_BUF],
 	.MaterialBuffer = mObjectBuffers.MaterialBuffer.Gpu(),
-	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF]
+	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF],
+	.GlobalCountBuffer = globalCountBuffer.Gpu()
       };
-      m = TRACER_RS_WORKGROUP_SIZE * TRACER_RS_COARSE_FACTOR;
-      c.x = (rayCount + m - 1) / m;
+      rpt = TRACER_RS_WORKGROUP_SIZE * TRACER_RS_COARSE_FACTOR;
+      wgc.x = (rayCount + rpt - 1) / rpt;
       GPU::Stage_barrier barrier = {
 	.SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 	.SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
@@ -345,7 +357,7 @@ namespace Tracer {
       pCmdBuf->StageBarrier(&barrier, 1);
       pCmdBuf->SetKernel(mShaderKernel);
       pCmdBuf->PushConstants(&rs);
-      pCmdBuf->Dispatch(c);
+      pCmdBuf->Dispatch(wgc);
       pCmdBuf->StageBarrier(&barrier, 1);
     }
 
@@ -361,12 +373,12 @@ namespace Tracer {
     
     pCmdBuf->SetKernel(mScreenWriteKernel);
     pCmdBuf->PushConstants(&sw);
-    c = {
+    uv3 wgc = {
       .x = ((imageDim.x * imageDim.y) + TRACER_SW_WORKGROUP_SIZE - 1) / TRACER_SW_WORKGROUP_SIZE,
       .y = 1,
       .z = 1
     };
-    pCmdBuf->Dispatch(c);
+    pCmdBuf->Dispatch(wgc);
     // img, to transfer src
     barriers[0] = {
       .SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,

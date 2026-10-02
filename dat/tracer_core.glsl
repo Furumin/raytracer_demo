@@ -21,6 +21,11 @@ layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitChunkBuf
   Hit_record_chunk Data[];
 };
 #endif
+#if TRACER_PERSISTENT_THREADS
+layout(std430, buffer_reference, buffer_reference_align = 16) coherent buffer GlobalCountBuffer {
+  uint Count;
+};
+#endif
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitBuffer {
   Hit_record Data[];
 };
@@ -105,7 +110,6 @@ Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   Ray r;
-  r.Color.w = 1.0;
   r.Position.x = _RAY_BUF_ACCESS(PosX);
   r.Position.y = _RAY_BUF_ACCESS(PosY);
   r.Position.z = _RAY_BUF_ACCESS(PosZ);

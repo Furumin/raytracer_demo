@@ -52,7 +52,6 @@ void kernel(in uint rayIdx) {
     } else {
       ray.Direction = normalize(norm + randomHemisphereVec3(hash, norm) * m.Roughness);
     }
-
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
   } else {
     clr = vec3(0.97, 1.0, 1.0);
@@ -62,6 +61,12 @@ void kernel(in uint rayIdx) {
 }
 
 void main() {
+#if TRACER_PERSISTENT_THREADS
+  if (gl_GlobalInvocationID.x == 0) {
+    GlobalCountBuffer gcb = GlobalCountBuffer(Push.Data.GlobalCountBuffer);
+    gcb.Count = 0;
+  }
+#endif
   const uint stride = (Push.Data.RayCount + TRACER_RS_COARSE_FACTOR - 1) / TRACER_RS_COARSE_FACTOR;
   for (uint i = 0; i < TRACER_RS_COARSE_FACTOR; i++) {
     uint rayIdx = uint(gl_GlobalInvocationID.x) + i * stride;

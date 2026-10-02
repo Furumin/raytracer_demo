@@ -14,14 +14,14 @@ void main() {
   ivec2 imagePos = ivec2(pixelIdx % data.Dimensions.x, pixelIdx / data.Dimensions.x);
   uint raysPerPixel = 1 << data.RaysPerPixelPow2;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
-  vec4 accum = vec4(0.0);
+  vec3 accum = vec3(0.0);
   for (uint i = 0; i < raysPerPixel; i++) {
     uint rayIdx = pixelIdx * raysPerPixel + i;
     Ray ray = loadRayByIdx(rayBuffer, rayIdx);
     accum += ray.Color;
   }
-  vec4 accumClr = accum / raysPerPixel;
-  vec4 currentAccumClr = imageLoad(_IMG, imagePos);
+  vec3 accumClr = accum / raysPerPixel;
+  vec3 currentAccumClr = (imageLoad(_IMG, imagePos)).xyz;
   currentAccumClr += (accumClr - currentAccumClr) / (data.AccumCount + 1.0);
-  imageStore(_IMG, imagePos, currentAccumClr);    
+  imageStore(_IMG, imagePos, vec4(currentAccumClr, 1.0));    
 }
