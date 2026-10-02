@@ -14,9 +14,13 @@ layout(std430, buffer_reference, buffer_reference_align = 16) buffer RayBuffer {
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer RayChunkBuffer {
   Ray_chunk Data[];
 };
+#if TRACER_RAY_HIT_UNIFIED
+#define HitChunkBuffer RayChunkBuffer
+#else
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitChunkBuffer {
   Hit_record_chunk Data[];
 };
+#endif
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitBuffer {
   Hit_record Data[];
 };
@@ -139,16 +143,15 @@ Hit_record loadHitByIdx(in HitChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   Hit_record r;
-  r.HitPosition.x = _RAY_BUF_ACCESS(PosX);
-  r.HitPosition.y = _RAY_BUF_ACCESS(PosY);
-  r.HitPosition.z = _RAY_BUF_ACCESS(PosZ);
-  r.Data = _RAY_BUF_ACCESS(Data);
+  r.HitPosition.x = _RAY_BUF_ACCESS(Hit.PosX);
+  r.HitPosition.y = _RAY_BUF_ACCESS(Hit.PosY);
+  r.HitPosition.z = _RAY_BUF_ACCESS(Hit.PosZ);
 
-  r.UV.x = _RAY_BUF_ACCESS(UVX);
-  r.UV.y = _RAY_BUF_ACCESS(UVY);
+  r.UV.x = _RAY_BUF_ACCESS(Hit.UVX);
+  r.UV.y = _RAY_BUF_ACCESS(Hit.UVY);
 
-  r.Normal.x = _RAY_BUF_ACCESS(NormalX);
-  r.Normal.y = _RAY_BUF_ACCESS(NormalY);
+  r.Normal.x = _RAY_BUF_ACCESS(Hit.NormalX);
+  r.Normal.y = _RAY_BUF_ACCESS(Hit.NormalY);
 
   return r;
 }
@@ -156,16 +159,15 @@ void storeHitByIdx(in HitChunkBuffer buf, in uint rayIdx, in Hit_record r) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
 
-  _RAY_BUF_ACCESS(PosX) = r.HitPosition.x;
-  _RAY_BUF_ACCESS(PosY) = r.HitPosition.y;
-  _RAY_BUF_ACCESS(PosZ) = r.HitPosition.z;
-  _RAY_BUF_ACCESS(Data) = r.Data;
+  _RAY_BUF_ACCESS(Hit.PosX) = r.HitPosition.x;
+  _RAY_BUF_ACCESS(Hit.PosY) = r.HitPosition.y;
+  _RAY_BUF_ACCESS(Hit.PosZ) = r.HitPosition.z;
 
-  _RAY_BUF_ACCESS(UVX) = r.UV.x;
-  _RAY_BUF_ACCESS(UVY) = r.UV.y;
+  _RAY_BUF_ACCESS(Hit.UVX) = r.UV.x;
+  _RAY_BUF_ACCESS(Hit.UVY) = r.UV.y;
 
-  _RAY_BUF_ACCESS(NormalX) = r.Normal.x;
-  _RAY_BUF_ACCESS(NormalY) = r.Normal.y;
+  _RAY_BUF_ACCESS(Hit.NormalX) = r.Normal.x;
+  _RAY_BUF_ACCESS(Hit.NormalY) = r.Normal.y;
 }
 
 Material loadMaterialByIdx(in MaterialChunkBuffer buf, in uint matIdx) {

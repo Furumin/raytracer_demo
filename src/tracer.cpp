@@ -169,7 +169,7 @@ namespace Tracer {
       .RefractionIndex = 1.5f
     };
     materials[1] = {
-      .Color = {1.0, 0.0, 0.0},
+      .Color = {0.2, 0.23, 0.21},
       .Roughness = 0.25f,
       .Flags = TRACER_MATERIAL_FLAG_METALLIC
     };
@@ -317,7 +317,7 @@ namespace Tracer {
       rt.Buffers[RT_PCD_OBJ_BUF] = mObjectBuffers.ObjectBuffer.Gpu();
       rt.Buffers[RT_PCD_HIT_BUF] = mRayBuffers.HitBuffer.Gpu();
       // ray shade
-      const u32 m = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
+      u32 m = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
       c.x = (rayCount + m - 1) / m;
       c.y = 1;
       c.z = 1;
@@ -334,7 +334,8 @@ namespace Tracer {
 	.MaterialBuffer = mObjectBuffers.MaterialBuffer.Gpu(),
 	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF]
       };
-      c.x = (rayCount + TRACER_RS_WORKGROUP_SIZE - 1) / TRACER_RS_WORKGROUP_SIZE;
+      m = TRACER_RS_WORKGROUP_SIZE * TRACER_RS_COARSE_FACTOR;
+      c.x = (rayCount + m - 1) / m;
       GPU::Stage_barrier barrier = {
 	.SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 	.SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,

@@ -1,67 +1,73 @@
 #version 460
 #include "core.glsl"
 #include "tracer_core.glsl"
+#define USE_LDS_STACK (0)
 layout(std430, push_constant) uniform Push_T {
   Rt_pcd Data;
 } Push;
 layout(local_size_x = TRACER_RT_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 bool sphereHit(in Ray ray, in Sphere s, out float tMin) {
-  vec3 center = s.Position;
-  vec3 oc = center - ray.Position;
+  vec3 oc = s.Position - ray.Position;
   float a = dot(ray.Direction, ray.Direction);
   float h = dot(ray.Direction, oc);
-  float c = dot(oc, oc) - s.Radius * s.Radius;
-  float disc = h * h - a * c;
-  if (disc < 0) return false;
+  float c = -fma(s.Radius, s.Radius, -dot(oc, oc)); //dot(oc, oc) - s.Radius * s.Radius; 
+  float disc = fma(h, h, -a * c); //h * h - a * c;
+  bool ht = disc >= 0;
 
+  const float recipA = 1.0 / a;
   float sqf = sqrt(disc);
-  float r = (h - sqf) / a;
+  float r = (h - sqf) * recipA;
   if (!(r >= 0.0f && r <= ray.T)) {
-    r = (h + sqf) / a;
-    if (!((r >= 0.0f && r <= ray.T))) {
-      return false;
-    }
+    r = (h + sqf) * recipA;
+    ht = ht && ((r >= 0.0f && r <= ray.T));
   }
 
   // hit
-  tMin = r;
-  return true;
+  if (ht)
+    tMin = r;
+  return ht;
 }
+#if USE_LDS_STACK
+const uint stackSize = 24*TRACER_RT_WORKGROUP_SIZE;
+shared uint stack[stackSize];
+#endif
 // with code from
 // https://github.com/jbikker/tinybvh/blob/dev/kernels/traverse_bvh2.cl
-bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
+bool traverse(in uint rayIdx, BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
   const vec3 rD = 1.0 / ray.Direction;
   const vec3 rO = ray.Position * -rD;
-  const float oldHit = ray.T;
-  float hit = oldHit;
+  float hit = ray.T;
   uint nodeIdx = 0;
+#if !USE_LDS_STACK
   uint stack[24];
-  uint stackPtr = 0;
+  const uint stackBase = 0;
+#else
+  const uint stackBase = (gl_LocalInvocationID.x) * 24; 
+#endif
+
+  uint stackPtr = stackBase;
   while (true) {
     if ((nodeIdx & 0x80000000) != 0) {
       // found hit! this BVH only contains spheres, so no need to check type
       uint thisObjId = nodeIdx & 0xffffff;
-      Object obj = objBuffer.Data[thisObjId];
       Sphere s;
-      s.Position = vec3(obj.Transform[3], obj.Transform[7], obj.Transform[11]);
-      s.Radius = obj.Transform[0];
+      s.Position = vec3(objBuffer.Data[thisObjId].Transform[3], objBuffer.Data[thisObjId].Transform[7], objBuffer.Data[thisObjId].Transform[11]);
+      s.Radius = objBuffer.Data[thisObjId].Transform[0];
       float t;
       bool h = sphereHit(ray, s, t);
       if (h && t < hit) {
 	hit = t;
 	objId = thisObjId;
 	hitSphereCenter = s.Position;
-	materialIndex = obj.MaterialIndex;
+	materialIndex = objBuffer.Data[thisObjId].MaterialIndex;
 	tMin = hit;
       }
-      if (stackPtr == 0) break;
+      if (stackPtr == stackBase) break;
       nodeIdx = stack[--stackPtr];
       continue;
     } else {
-      Bvh2 n = bvhBuffer.Data[nodeIdx];
-      const vec4 lmin = n.lmin, lmax = n.lmax;
-      const vec4 rmin = n.rmin, rmax = n.rmax;
-      uint left = floatBitsToUint( lmin.w ), right = floatBitsToUint( lmax.w );
+      const vec4 lmin = bvhBuffer.Data[nodeIdx].lmin, lmax = bvhBuffer.Data[nodeIdx].lmax;
+      const vec4 rmin = bvhBuffer.Data[nodeIdx].rmin, rmax = bvhBuffer.Data[nodeIdx].rmax;
       const vec3 t1a = fma( lmin.xyz, rD, rO ), t2a = fma( lmax.xyz, rD, rO );
       const vec3 t1b = fma( rmin.xyz, rD, rO ), t2b = fma( rmax.xyz, rD, rO );
       const vec3 minta = min( t1a, t2a ), maxta = max( t1a, t2a );
@@ -71,6 +77,7 @@ bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint 
       const float tmaxa = min( min( min( maxta.x, maxta.y ), maxta.z ), hit );
       const float tmaxb = min( min( min( maxtb.x, maxtb.y ), maxtb.z ), hit );
       const bool hitA = tmina <= tmaxa, hitB = tminb <= tmaxb;
+      uint left = floatBitsToUint( lmin.w ), right = floatBitsToUint( lmax.w );
       if (hitA && hitB) {
 	// add furthest hit first, nearest hit at top of stack
 	  uint near = left, far = right;
@@ -79,10 +86,10 @@ bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint 
 	}
       else if (hitA) nodeIdx = left;
       else if (hitB) nodeIdx = right;
-      else { if (stackPtr == 0) break; nodeIdx = stack[--stackPtr]; }
+      else { if (stackPtr == stackBase) break; nodeIdx = stack[--stackPtr]; }
     }
   }
-  return hit < oldHit;
+  return hit < ray.T;
 }
 void rtSphereKernel(in uint rayIdx) {
   Rt_pcd data = Push.Data;
@@ -90,7 +97,9 @@ void rtSphereKernel(in uint rayIdx) {
   Ray ray;
   Camera c = CameraBuffer(data.CameraPointer).Data;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
+  #if !TRACER_RAY_HIT_UNIFIED
   HitChunkBuffer hitBuffer = HitChunkBuffer(data.Buffers[RT_PCD_HIT_BUF]);
+  #endif
   BvhBuffer bvhBuffer = BvhBuffer(data.Buffers[RT_PCD_TLAS_BUF]);
   Hit_record h;
   if (data.Depth == 0) {
@@ -124,13 +133,11 @@ void rtSphereKernel(in uint rayIdx) {
   ObjectBuffer objectBuffer = ObjectBuffer(data.Buffers[RT_PCD_OBJ_BUF]);
   vec3 sphereCenter;
   uint materialIndex;
-  hit = traverse(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex);
+  hit = traverse(rayIdx, bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex);
   if (hit) {
     ray.T = tMin;
     // increment depth
     rayDepth++;
-    ray.Data &= ~((31 << 27));
-    ray.Data |= (rayDepth << 27);
     h.HitPosition = ray.Position + ray.Direction * ray.T;
     h.Data = 0;
     h.UV = vec2(0.0);
@@ -141,13 +148,17 @@ void rtSphereKernel(in uint rayIdx) {
     nY |= (zSign > 0.0 ? 1 : 0);
     normal.y = uintBitsToFloat(nY);
     h.Normal = normal.xy;
-    
-    h.Data = materialIndex;
   } else {
+    materialIndex = TRACER_MATERIAL_INDEX_MASK;
     h.Data = 0xffffffff;
   }
+  ray.Data = (rayDepth << 27) | materialIndex;
   storeRayByIdx(rayBuffer, rayIdx, ray);
-  storeHitByIdx(hitBuffer, rayIdx, h);  
+#if TRACER_RAY_HIT_UNIFIED
+  storeHitByIdx(rayBuffer, rayIdx, h);
+#else
+  storeHitByIdx(hitBuffer, rayIdx, h);
+#endif
 }
 void main() {
   uint rayIdx = uint(gl_GlobalInvocationID.x);

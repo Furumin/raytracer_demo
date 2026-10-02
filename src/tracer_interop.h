@@ -13,6 +13,8 @@ namespace Tracer {
   
 #endif
 
+#define TRACER_RAY_HIT_UNIFIED (1)
+
   struct Camera {
     v3 Position; // user
     float AspectRatio; // cached, used at runtime
@@ -55,18 +57,37 @@ namespace Tracer {
 #define TRACER_RAY_CHUNK_SIZE (1 << TRACER_RAY_CHUNK_SIZE_POW2)
 #define TRACER_MATERIAL_CHUNK_SIZE_POW2 (5)
 #define TRACER_MATERIAL_CHUNK_SIZE (1 << TRACER_MATERIAL_CHUNK_SIZE_POW2)
+#define TRACER_MATERIAL_INDEX_MASK (0x07ffffff)
+  struct Hit_record_chunk_base {
+    float PosX   [TRACER_RAY_CHUNK_SIZE];
+    float PosY   [TRACER_RAY_CHUNK_SIZE];
+    float PosZ   [TRACER_RAY_CHUNK_SIZE];
+    float UVX    [TRACER_RAY_CHUNK_SIZE];
+    float UVY    [TRACER_RAY_CHUNK_SIZE];
+    float NormalX[TRACER_RAY_CHUNK_SIZE];
+    float NormalY[TRACER_RAY_CHUNK_SIZE];
+  };
+
+  struct Hit_record_chunk {
+    Hit_record_chunk_base Hit;
+  };
+
   struct Ray_chunk {
-    float PosX[TRACER_RAY_CHUNK_SIZE];
-    float PosY[TRACER_RAY_CHUNK_SIZE];
-    float PosZ[TRACER_RAY_CHUNK_SIZE];
-    u32 Data[TRACER_RAY_CHUNK_SIZE];
-    float DirX[TRACER_RAY_CHUNK_SIZE];
-    float DirY[TRACER_RAY_CHUNK_SIZE];
-    float DirZ[TRACER_RAY_CHUNK_SIZE];
-    float T[TRACER_RAY_CHUNK_SIZE];
+    float PosX  [TRACER_RAY_CHUNK_SIZE];
+    float PosY  [TRACER_RAY_CHUNK_SIZE];
+    float PosZ  [TRACER_RAY_CHUNK_SIZE];
+    u32 Data    [TRACER_RAY_CHUNK_SIZE]; // 5 MSB is depth, rest is material index
+    float DirX  [TRACER_RAY_CHUNK_SIZE];
+    float DirY  [TRACER_RAY_CHUNK_SIZE];
+    float DirZ  [TRACER_RAY_CHUNK_SIZE];
+    float T     [TRACER_RAY_CHUNK_SIZE];
     float ColorX[TRACER_RAY_CHUNK_SIZE];
     float ColorY[TRACER_RAY_CHUNK_SIZE];
     float ColorZ[TRACER_RAY_CHUNK_SIZE];
+
+#if TRACER_RAY_HIT_UNIFIED
+    Hit_record_chunk_base Hit;
+#endif
   };
 
   struct Sphere {
@@ -91,12 +112,12 @@ namespace Tracer {
   };
 
   struct Material_chunk {
-    float ColorX[TRACER_MATERIAL_CHUNK_SIZE];
-    float ColorY[TRACER_MATERIAL_CHUNK_SIZE];
-    float ColorZ[TRACER_MATERIAL_CHUNK_SIZE];
-    float Roughness[TRACER_MATERIAL_CHUNK_SIZE];
+    float ColorX         [TRACER_MATERIAL_CHUNK_SIZE];
+    float ColorY         [TRACER_MATERIAL_CHUNK_SIZE];
+    float ColorZ         [TRACER_MATERIAL_CHUNK_SIZE];
+    float Roughness      [TRACER_MATERIAL_CHUNK_SIZE];
     float RefractionIndex[TRACER_MATERIAL_CHUNK_SIZE];
-    u32 Flags[TRACER_MATERIAL_CHUNK_SIZE];
+    u32 Flags            [TRACER_MATERIAL_CHUNK_SIZE];
   };
 
   /*  struct Mesh {
@@ -120,17 +141,6 @@ namespace Tracer {
     u32 Data; // Material index, 0xffffffff means invalid hit record
     v2 UV;
     v2 Normal;
-  };
-
-  struct Hit_record_chunk {
-    float PosX[TRACER_RAY_CHUNK_SIZE];
-    float PosY[TRACER_RAY_CHUNK_SIZE];
-    float PosZ[TRACER_RAY_CHUNK_SIZE];
-    u32 Data[TRACER_RAY_CHUNK_SIZE];
-    float UVX[TRACER_RAY_CHUNK_SIZE];
-    float UVY[TRACER_RAY_CHUNK_SIZE];
-    float NormalX[TRACER_RAY_CHUNK_SIZE];
-    float NormalY[TRACER_RAY_CHUNK_SIZE];
   };
 
   // https://github.com/jbikker/tinybvh/blob/main/tiny_bvh_base.h
@@ -160,7 +170,8 @@ namespace Tracer {
 
 #define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
-#define TRACER_RS_WORKGROUP_SIZE (256)
+#define TRACER_RS_WORKGROUP_SIZE (128)
+#define TRACER_RS_COARSE_FACTOR (2)
 #define RT_PCD_RAY_BUF (0)
 #define RT_PCD_TLAS_BUF (1)
 #define RT_PCD_OBJ_BUF (2)

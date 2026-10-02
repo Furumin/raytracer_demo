@@ -857,7 +857,7 @@ namespace GPU {
     };
     VkBuffer hostAccessibleBuffer, deviceBuffer;
     vkCreateBuffer(this->Device, &bci, 0, &hostAccessibleBuffer);
-    bci.size = MEGA(256);
+    bci.size = MEGA(512);
     vkCreateBuffer(this->Device, &bci, 0, &deviceBuffer);
     VkBuffer buffers[2] = {hostAccessibleBuffer, deviceBuffer};
     VkMemoryPropertyFlags necessaryFlags[2] = {
