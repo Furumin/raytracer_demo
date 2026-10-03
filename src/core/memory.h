@@ -549,7 +549,7 @@ extern "C" {
       size	    = FloatToUi32((fl << TLSF_MANTISSA_BITS) | sl);
     } else {
       //go for next seg list
-      tmp = a[0].FL & ((u32)0xffffffff << (fl + 1));
+      tmp = a[0].FL & ((u32)0xffffffff << (fl));
       if (!tmp)	{
 	ASSERT(0, "Ran out of memory!");
 	return 0;
@@ -911,7 +911,7 @@ extern "C" {
       size	    = FloatToUi32((fl << TLSF_MANTISSA_BITS) | sl);
     } else {
       //go for next seg list
-      tmp	    = a[0].FL & ((u32)0xffffffff << (fl + 1));
+      tmp	    = a[0].FL & ((u32)0xffffffff << (fl));
       if (!tmp) {
 	//ran out of memory
 	return (OffsetAllocation){0xffffffff, 0xffffffff/*, 0*/};

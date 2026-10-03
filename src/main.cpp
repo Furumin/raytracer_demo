@@ -4,7 +4,7 @@
 
 // Defines
 #define APP_CPP_CODE (1)
-#define VULKAN_VALIDATE (0)
+#define VULKAN_VALIDATE (1)
 #define DESC_POOL_DESC_CAPACITY (KILO(32))
 
 // Permanent defines
@@ -120,8 +120,8 @@ CreateWindow(const char *className, const char *windowName, HINSTANCE instance) 
 			     // pos & size
 			     CW_USEDEFAULT,
 			     CW_USEDEFAULT,
-			     600,
-			     400,
+			     320*2,
+			     240*2,
 
 			     NULL,
 			     NULL,
@@ -188,7 +188,7 @@ int AppMainProc(void *param) {
 int CALLBACK
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* pCmdLineA, int nCmdShow) {
   setlocale(LC_ALL, ".UTF8");
-  HWND windowHandle = CreateWindow("AppClass", "App", hInstance);
+  HWND windowHandle = CreateWindow("AppClass", "Raycast", hInstance);
   if (NULL == windowHandle) {
     return -1;
   }

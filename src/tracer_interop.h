@@ -19,6 +19,7 @@ namespace Tracer {
 
 #define TRACER_RAY_HIT_UNIFIED (1)
 #define TRACER_PERSISTENT_THREADS (0)
+#define TRACER_USE_F16_COLOR (1)
   struct Camera {
     v3 Position; // user
     float AspectRatio; // cached, used at runtime
@@ -28,12 +29,15 @@ namespace Tracer {
     
     v3 Up; // user
     u32 PixelHeight; // user
+
+    v3 Right;
+    u32 _PADDING0[1];
     
     v3 DeltaU; // cached, used at runtime to find world-space points that correspond to each image pixel
     float VFov; // user
     
     v3 DeltaV; // cached, used at runtime to find world-space points that correspond to each image pixel
-    float _Padding;
+    u32 _PADDING[1];
     
     v3 Pixel00; // cached, base world-space point to shoot ray towards
     float FocusDistance; // user
@@ -66,8 +70,8 @@ namespace Tracer {
     float PosX   [TRACER_RAY_CHUNK_SIZE];
     float PosY   [TRACER_RAY_CHUNK_SIZE];
     float PosZ   [TRACER_RAY_CHUNK_SIZE];
-    float UVX    [TRACER_RAY_CHUNK_SIZE];
-    float UVY    [TRACER_RAY_CHUNK_SIZE];
+    //    float UVX    [TRACER_RAY_CHUNK_SIZE];
+    //    float UVY    [TRACER_RAY_CHUNK_SIZE];
     float NormalX[TRACER_RAY_CHUNK_SIZE];
     float NormalY[TRACER_RAY_CHUNK_SIZE];
   };
@@ -81,7 +85,7 @@ namespace Tracer {
     float DirX  [TRACER_RAY_CHUNK_SIZE];
     float DirY  [TRACER_RAY_CHUNK_SIZE];
     float DirZ  [TRACER_RAY_CHUNK_SIZE];
-    float T     [TRACER_RAY_CHUNK_SIZE];
+    //    float T     [TRACER_RAY_CHUNK_SIZE];
 
 #if TRACER_RAY_HIT_UNIFIED
     Hit_record_chunk_base Hit;
@@ -91,24 +95,26 @@ namespace Tracer {
     float PosY  [TRACER_RAY_CHUNK_SIZE];
     float PosZ  [TRACER_RAY_CHUNK_SIZE];
 
+#if TRACER_USE_F16_COLOR
     f16 ColorX[TRACER_RAY_CHUNK_SIZE];
     f16 ColorY[TRACER_RAY_CHUNK_SIZE];
     f16 ColorZ[TRACER_RAY_CHUNK_SIZE];
+#else
+    float ColorX[TRACER_RAY_CHUNK_SIZE];
+    float ColorY[TRACER_RAY_CHUNK_SIZE];
+    float ColorZ[TRACER_RAY_CHUNK_SIZE];    
+#endif
   };
 
   struct Sphere {
     v3 Position;
     float Radius;
     v4 Color;
-
-    // TODO: change to
-    /*
-      float Radius;
-     */
   };
 
   // master material struct
 #define TRACER_MATERIAL_FLAG_METALLIC (1)
+#define TRACER_MATERIAL_FLAG_EMISSIVE (2)
   struct Material {
     v3 Color;
     float Roughness;
@@ -145,7 +151,7 @@ namespace Tracer {
   struct Hit_record {
     v3 HitPosition;
     u32 Data; // Material index, 0xffffffff means invalid hit record
-    v2 UV;
+    //    v2 UV;
     v2 Normal;
   };
 
@@ -184,28 +190,33 @@ namespace Tracer {
 #define RT_PCD_HIT_BUF (3)
 #define RT_PCD_CNT_BUF (4)
   struct Rt_pcd {
+    uv4 Hash;
+    
     u64 CameraPointer;
-    u32 Hash;
-    u32 Signals;
-
+    u32 Signals; // unused
+    u32 RayIdxOffset;
+    
     uv2 Dimensions;
     u32 RaysPerPixelPow2;
     u32 RayCount; // Total ray count
     
     u64 Buffers[5];
-    u64 _PADDING0[1];
+    u64 _PADDING1[1];
     
     u32 Depth; // If MSB is asserted, populate ray buffers
-    u32 _PADDING1[3];
+    float PinholeRadius;
+    u32 _PADDING2[2];
   };
 
   // shading
   struct Rs_pcd {
+    uv4 Hash;
+    
     uv2 Dimensions;
-    u32 Hash;
-    u32 ImageStorageHandle;
+    u32 ImageStorageHandle; // unused
+    u32 RayIdxOffset;
 
-    float Hyst;
+    float Hyst; // unused
     u32 Depth;
     u32 RayCount;
     u32 RaysPerPixelPow2;
@@ -213,19 +224,24 @@ namespace Tracer {
     u64 HitBuffer;
     u64 MaterialBuffer;
     u64 RayBuffer;
-
     // include even if unused 
     u64 GlobalCountBuffer;
+
+    v4 SkyColor;
   };
 
-#define TRACER_SW_WORKGROUP_SIZE (256)
   struct Sw_pcd {
     uv2 Dimensions;
     u32 ImageStorageHandle;
     u32 TonemapImageStorageHandle;
+    
     float AccumCount;
     u32 RaysPerPixelPow2;
     u64 RayBuffer;
+
+    u32 RayIdxOffset;
+    u32 RayCount;
+    u32 _PADDING[2];
   };
 
 #undef f16

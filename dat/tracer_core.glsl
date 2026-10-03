@@ -105,7 +105,16 @@ void getMaterialChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk)
   idxInChunk = rayIdx & (TRACER_MATERIAL_CHUNK_SIZE - 1); // modulo
 }
 
+#if TRACER_USE_F16_COLOR
+#define _STORE_COLOR(a) float16_t(a)
+#define _LOAD_COLOR(a) float(a)
+#else
+#define _STORE_COLOR(a) (a)
+#define _LOAD_COLOR(a) (a)
+#endif
+
 #define _RAY_BUF_ACCESS(prop) buf.Data[chunkIdx]. prop [idxInChunk]
+
 Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loadPos) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
@@ -121,9 +130,9 @@ Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loa
   r.Direction.z = _RAY_BUF_ACCESS(DirZ);
 
   if (loadColor) {
-    r.Color.x = float(_RAY_BUF_ACCESS(ColorX));
-    r.Color.y = float(_RAY_BUF_ACCESS(ColorY));
-    r.Color.z = float(_RAY_BUF_ACCESS(ColorZ));
+    r.Color.x = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorX));
+    r.Color.y = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorY));
+    r.Color.z = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorZ));
   }
   
   return r;
@@ -133,9 +142,9 @@ vec3 loadRayClrByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   vec3 v;
-  v.x = float(_RAY_BUF_ACCESS(ColorX));
-  v.y = float(_RAY_BUF_ACCESS(ColorY));
-  v.z = float(_RAY_BUF_ACCESS(ColorZ));
+  v.x = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorX));
+  v.y = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorY));
+  v.z = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorZ));
   return v;
 }
 
@@ -153,9 +162,9 @@ void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storeCo
   _RAY_BUF_ACCESS(DirY) = r.Direction.y;
   _RAY_BUF_ACCESS(DirZ) = r.Direction.z;
   if (storeColor) {
-    _RAY_BUF_ACCESS(ColorX) = float16_t(r.Color.x);
-    _RAY_BUF_ACCESS(ColorY) = float16_t(r.Color.y);
-    _RAY_BUF_ACCESS(ColorZ) = float16_t(r.Color.z);
+    _RAY_BUF_ACCESS(ColorX) = _STORE_COLOR(r.Color.x);
+    _RAY_BUF_ACCESS(ColorY) = _STORE_COLOR(r.Color.y);
+    _RAY_BUF_ACCESS(ColorZ) = _STORE_COLOR(r.Color.z);
   }
 }
 
@@ -167,8 +176,8 @@ Hit_record loadHitByIdx(in HitChunkBuffer buf, in uint rayIdx) {
   r.HitPosition.y = _RAY_BUF_ACCESS(Hit.PosY);
   r.HitPosition.z = _RAY_BUF_ACCESS(Hit.PosZ);
 
-  r.UV.x = _RAY_BUF_ACCESS(Hit.UVX);
-  r.UV.y = _RAY_BUF_ACCESS(Hit.UVY);
+  //  r.UV.x = _RAY_BUF_ACCESS(Hit.UVX);
+  //  r.UV.y = _RAY_BUF_ACCESS(Hit.UVY);
 
   r.Normal.x = _RAY_BUF_ACCESS(Hit.NormalX);
   r.Normal.y = _RAY_BUF_ACCESS(Hit.NormalY);
@@ -183,8 +192,8 @@ void storeHitByIdx(in HitChunkBuffer buf, in uint rayIdx, in Hit_record r) {
   _RAY_BUF_ACCESS(Hit.PosY) = r.HitPosition.y;
   _RAY_BUF_ACCESS(Hit.PosZ) = r.HitPosition.z;
 
-  _RAY_BUF_ACCESS(Hit.UVX) = r.UV.x;
-  _RAY_BUF_ACCESS(Hit.UVY) = r.UV.y;
+  //  _RAY_BUF_ACCESS(Hit.UVX) = r.UV.x;
+  //  _RAY_BUF_ACCESS(Hit.UVY) = r.UV.y;
 
   _RAY_BUF_ACCESS(Hit.NormalX) = r.Normal.x;
   _RAY_BUF_ACCESS(Hit.NormalY) = r.Normal.y;

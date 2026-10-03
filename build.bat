@@ -4,7 +4,7 @@ if "%1" == "dev" (
    echo Dev mode, no optimizations enabled.
    set "flags=-g -O0 -DFLAG_GCC_DEBUG -Wall"   
 ) else (
-   set "flags=-O3 -g -mfma"
+   set "flags=-O3 -g -mfma -Wall"
    echo Release mode, Heavy optimizations.
 
 )

@@ -92,6 +92,9 @@ namespace Tracer {
 
     u32 mFrameBufferInvRelSizePow2 = 1;
     u32 mRaysPerPixelPow2 = 2;
+    u32 mMaxDepth = 15;
+
+    u32 mRayFrameCounter = 0;
     
     GPU::KernelHandle
     LoadKernel(const char *path);
@@ -99,7 +102,7 @@ namespace Tracer {
     ReinitCamera(uv2 pixelImageDim);
     void
     FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf);
-    void
+    bool
     CheckMovement();
   public:
     void

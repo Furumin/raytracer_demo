@@ -1237,7 +1237,7 @@ namespace GPU {
     ctx->BumpAllocs[1][currentFrame].Reset();
     const u32 timestampCount = ctx->TimestampCounters[currentFrame];
     if (timestampCount) {
-      vkGetQueryPoolResults(ctx->Device, ctx->TimestampQueryPools[currentFrame], 0, timestampCount, timestampCount * sizeof (Timestamp), ctx->TimestampBuffers[currentFrame], sizeof (Timestamp), VK_QUERY_RESULT_64_BIT);
+      vkGetQueryPoolResults(ctx->Device, ctx->TimestampQueryPools[currentFrame], 0, timestampCount, timestampCount * sizeof (Timestamp), ctx->TimestampBuffers[currentFrame], sizeof (Timestamp), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
     }
     for (u32 i = 0; i < timestampCount; i++) {
       Timestamp t = ctx->TimestampBuffers[currentFrame][i];
@@ -1679,7 +1679,7 @@ namespace GPU {
   void
   Cmd_buf::ResetTimestamps() const {
     const Ctx *ctx = &gCtx;
-    vkCmdResetQueryPool(this->CommandBuffer, ctx->TimestampQueryPools[ctx->CurrentFrameIndex], 0, ctx->TimestampCounters[ctx->CurrentFrameIndex]);
+    vkCmdResetQueryPool(this->CommandBuffer, ctx->TimestampQueryPools[ctx->CurrentFrameIndex], 0, ctx->TimestampCapacity);
   }
 
   double

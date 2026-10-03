@@ -9,7 +9,7 @@
 
 #define PI 3.1415926535
 #define FLOAT_INF (1.0 / 0.0)
-
+#define INVPI (1.0 / PI)
 #define GLOBAL_DESCRIPTORS \
   layout (set=0, binding=0) uniform texture2D _textures[];	\
   layout (set=0, binding=0) uniform utexture2D _uTextures[];	\
@@ -71,12 +71,25 @@ float randomFloatNorm(uint seed) {
 
 // returns random vec3 INSIDE unit sphere
 vec3 randomUnitVec3(uint seed) {
-  vec2 v = vec2(randomFloatNorm(seed), randomFloatNorm(hash1(seed+1)));
-  return octadecode(v);
+  return normalize(vec3(randomFloatNorm(seed), randomFloatNorm(hash1(seed+1)), randomFloatNorm(hash1(seed + 3))));
 }
 
 vec3 randomHemisphereVec3(uint seed, vec3 normal) {
   vec3 u = randomUnitVec3(seed);
+  if (dot(u, normal) < 0.0) return -u;
+  return u;
+}
+
+vec3 randomUnitVec3(uvec3 seeds) {
+  //  return normalize(vec3(randomFloatNorm(seeds[0]), randomFloatNorm(seeds[1]), randomFloatNorm(seeds[2])));
+  float th = randomFloatNorm(seeds[0]) * PI + PI;
+  float z = randomFloatNorm(seeds[1]);
+  float sq = sqrt(1 - z * z);
+  return vec3(sq * cos(th), sq * sin(th), z);
+}
+
+vec3 randomHemisphereVec3(uvec3 seeds, vec3 normal) {
+  vec3 u = randomUnitVec3(seeds);
   if (dot(u, normal) < 0.0) return -u;
   return u;
 }

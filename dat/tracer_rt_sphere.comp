@@ -33,7 +33,7 @@ shared uint stack[stackSize];
 #endif
 // with code from
 // https://github.com/jbikker/tinybvh/blob/dev/kernels/traverse_bvh2.cl
-bool traverse(in uint rayIdx, BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
+bool traverse(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
   const vec3 rD = 1.0 / ray.Direction;
   const vec3 rO = ray.Position * -rD;
   float hit = ray.T;
@@ -91,9 +91,9 @@ bool traverse(in uint rayIdx, BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ra
   }
   return hit < ray.T;
 }
-bool rtSphereKernel(in uint rayIdx) {
+bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   Rt_pcd data = Push.Data;
-  if (rayIdx >= data.RayCount) return false;
+  if (localRayIdx >= data.RayCount) return false;
   Ray ray;
   Camera c = CameraBuffer(data.CameraPointer).Data;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
@@ -104,17 +104,18 @@ bool rtSphereKernel(in uint rayIdx) {
   Hit_record h;
   if (data.Depth == 0) {
     // populate ray buffer, default hit records
-    ray.Position = c.Position;
+    vec2 defocus = data.PinholeRadius * vec2(randomFloatNorm(data.Hash.z), randomFloatNorm(data.Hash.w));
+    ray.Position = c.Position + defocus.x * c.Right + defocus.y * c.Up;
     vec2 imagePixelPos = vec2(imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2));
     uint rayI = rayIdx & data.RaysPerPixelPow2;
-    imagePixelPos.x += 0.5 * (randomFloatNorm(data.Hash + rayI));
-    imagePixelPos.y += 0.5 * (randomFloatNorm(hash1(data.Hash + rayI)));
+    imagePixelPos.x += 0.5 * (randomFloatNorm(data.Hash.x + rayI));
+    imagePixelPos.y += 0.5 * (randomFloatNorm(data.Hash.y + rayI));
     ray.Direction = rayDirFromPixelPos(c, imagePixelPos) - ray.Position;
     ray.Data = 0;
     ray.Color = vec3(1.0);
   } else {
     // fetch ray
-    ray = loadRayByIdx(rayBuffer, rayIdx, false, true);
+    ray = loadRayByIdx(rayBuffer, localRayIdx, false, true);
   }
   ray.T = FLOAT_INF;
       
@@ -126,13 +127,12 @@ bool rtSphereKernel(in uint rayIdx) {
   vec3 sphereCenter;
   uint materialIndex;
   uint objId = 0x80000000; // invalid object ID
-  if (traverse(rayIdx, bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex)) {
+  if (traverse(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex)) {
     ray.T = tMin;
     // increment depth
     rayDepth++;
     h.HitPosition = ray.Position + ray.Direction * ray.T;
     h.Data = 0;
-    h.UV = vec2(0.0);
     vec3 normal = normalize(h.HitPosition - sphereCenter);
     const float zSign = sign(normal.z);
     uint nY = floatBitsToUint(normal.y);
@@ -145,16 +145,17 @@ bool rtSphereKernel(in uint rayIdx) {
     h.Data = 0xffffffff;
   }
   ray.Data = (rayDepth << 27) | materialIndex;
-  storeRayByIdx(rayBuffer, rayIdx, ray, data.Depth == 0, false);
+  storeRayByIdx(rayBuffer, localRayIdx, ray, data.Depth == 0, false);
 #if TRACER_RAY_HIT_UNIFIED
-  storeHitByIdx(rayBuffer, rayIdx, h);
+  storeHitByIdx(rayBuffer, localRayIdx, h);
 #else
-  storeHitByIdx(hitBuffer, rayIdx, h);
+  storeHitByIdx(hitBuffer, localRayIdx, h);
 #endif
   return true;
 }
 void main() {
 #if TRACER_PERSISTENT_THREADS
+  /*
   GlobalCountBuffer gcb = GlobalCountBuffer(Push.Data.Buffers[RT_PCD_CNT_BUF]);
   const uint batchSize = 1; // how many rays per thread to claim
   uint batchCounter = 0;
@@ -176,12 +177,13 @@ void main() {
     batchCounter = (batchCounter + 1) % batchSize;
     if (subgroupAll(!traced)) break;
   }
-  
+  */  
 #else
-  uint rayIdx = uint(gl_GlobalInvocationID.x);
-  uint stride = (Push.Data.RayCount + TRACER_RT_COARSE_FACTOR - 1) / TRACER_RT_COARSE_FACTOR;
+  uint stride = ((Push.Data.RayCount) + TRACER_RT_COARSE_FACTOR - 1) / TRACER_RT_COARSE_FACTOR;
   for (uint i = 0; i < TRACER_RT_COARSE_FACTOR; i++) {
-    bool b = rtSphereKernel(rayIdx + stride * i);
+    uint localRayIdx = uint(gl_GlobalInvocationID.x) + i * stride;
+    uint rayIdx = Push.Data.RayIdxOffset + localRayIdx;
+    bool b = rtSphereKernel(rayIdx, localRayIdx);
   }
 #endif
 }
