@@ -121,9 +121,9 @@ Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loa
   r.Direction.z = _RAY_BUF_ACCESS(DirZ);
 
   if (loadColor) {
-    r.Color.x = _RAY_BUF_ACCESS(ColorX);
-    r.Color.y = _RAY_BUF_ACCESS(ColorY);
-    r.Color.z = _RAY_BUF_ACCESS(ColorZ);
+    r.Color.x = float(_RAY_BUF_ACCESS(ColorX));
+    r.Color.y = float(_RAY_BUF_ACCESS(ColorY));
+    r.Color.z = float(_RAY_BUF_ACCESS(ColorZ));
   }
   
   return r;
@@ -133,9 +133,9 @@ vec3 loadRayClrByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   vec3 v;
-  v.x = _RAY_BUF_ACCESS(ColorX);
-  v.y = _RAY_BUF_ACCESS(ColorY);
-  v.z = _RAY_BUF_ACCESS(ColorZ);
+  v.x = float(_RAY_BUF_ACCESS(ColorX));
+  v.y = float(_RAY_BUF_ACCESS(ColorY));
+  v.z = float(_RAY_BUF_ACCESS(ColorZ));
   return v;
 }
 
@@ -153,9 +153,9 @@ void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storeCo
   _RAY_BUF_ACCESS(DirY) = r.Direction.y;
   _RAY_BUF_ACCESS(DirZ) = r.Direction.z;
   if (storeColor) {
-    _RAY_BUF_ACCESS(ColorX) = r.Color.x;
-    _RAY_BUF_ACCESS(ColorY) = r.Color.y;
-    _RAY_BUF_ACCESS(ColorZ) = r.Color.z;
+    _RAY_BUF_ACCESS(ColorX) = float16_t(r.Color.x);
+    _RAY_BUF_ACCESS(ColorY) = float16_t(r.Color.y);
+    _RAY_BUF_ACCESS(ColorZ) = float16_t(r.Color.z);
   }
 }
 

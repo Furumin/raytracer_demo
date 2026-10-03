@@ -494,7 +494,9 @@ namespace GPU {
       "VK_KHR_timeline_semaphore",
       "VK_EXT_descriptor_indexing",
       "VK_KHR_synchronization2",
-      "VK_KHR_shader_draw_parameters"
+      "VK_KHR_shader_draw_parameters",
+      "VK_KHR_16bit_storage",
+      "VK_KHR_16bit_storage"
     };
     const char* validationLayers[] = {
       "VK_LAYER_KHRONOS_validation"

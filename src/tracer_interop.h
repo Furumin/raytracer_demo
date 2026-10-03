@@ -1,7 +1,11 @@
 #if APP_CPP_CODE
 #pragma once
 namespace Tracer {
+#define f16 u16 // do not access from cpu !!
+#define f16v4 uv2
 #else
+#define f16 float16_t
+#define f16v4 f16vec4
 #define u32 uint
 #define u64 uvec2 // don't assume 64-bit support in shaders
 #define uv2 uvec2
@@ -83,13 +87,13 @@ namespace Tracer {
     Hit_record_chunk_base Hit;
 #endif
 
-    float ColorX[TRACER_RAY_CHUNK_SIZE];
-    float ColorY[TRACER_RAY_CHUNK_SIZE];
-    float ColorZ[TRACER_RAY_CHUNK_SIZE];
-
     float PosX  [TRACER_RAY_CHUNK_SIZE];
     float PosY  [TRACER_RAY_CHUNK_SIZE];
     float PosZ  [TRACER_RAY_CHUNK_SIZE];
+
+    f16 ColorX[TRACER_RAY_CHUNK_SIZE];
+    f16 ColorY[TRACER_RAY_CHUNK_SIZE];
+    f16 ColorZ[TRACER_RAY_CHUNK_SIZE];
   };
 
   struct Sphere {
@@ -223,6 +227,8 @@ namespace Tracer {
     u32 RaysPerPixelPow2;
     u64 RayBuffer;
   };
+
+#undef f16
   
 #if APP_CPP_CODE
 }

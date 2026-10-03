@@ -57,6 +57,7 @@ void kernel(in uint rayIdx) {
     clr = vec3(0.97, 1.0, 1.0);
   }
   ray.Color.xyz *= clr;
+  ray.Color.xyz = clamp(ray.Color.xyz, vec3(0.0), vec3(10000.0));
   storeRayByIdx(rayBuffer, rayIdx, ray, true, true);
 }
 

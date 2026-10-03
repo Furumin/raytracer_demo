@@ -167,7 +167,7 @@ namespace Tracer {
       materialIndices[i] = hash1(i) % 3;
     }
     materials[0] = {
-      .Color = {6.999, 6.99, 6.999},
+      .Color = {2.999, 2.99, 2.999},
       .Roughness = 0.5f
     };
     materials[1] = {

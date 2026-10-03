@@ -29,6 +29,6 @@ void main() {
 
   // tonemapping, but for now, just store direct image (test)
   // reinhard
-  currentAccumClr = currentAccumClr / (currentAccumClr + 1.0);
+  //  currentAccumClr = currentAccumClr / (currentAccumClr + 1.0);
   imageStore(_TIMG, imagePos, vec4(currentAccumClr, 1.0));
 }
