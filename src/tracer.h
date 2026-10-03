@@ -53,8 +53,9 @@ namespace Tracer {
   class World {
   private:
     Scratch_arena mScratchArena;
-    GPU::ImageHandle mTestAttachment;
-    GPU::KernelHandle mTestKernel;
+    Input_stream mInput;
+    GPU::ImageHandle mBaseAttachment;
+    GPU::ImageHandle mTonemapAttachment;    
     GPU::KernelHandle mSphereTestKernel;   // tracer_rt_sphere.comp
     GPU::KernelHandle mShaderKernel;       // tracer_shade.comp
     GPU::KernelHandle mScreenWriteKernel;  // tracer_sw.comp
@@ -67,6 +68,7 @@ namespace Tracer {
     
     Ray_trace_buffers mRayBuffers;
 
+    quat mCameraQuat = {0, 0, 0, 1};
     Camera mCamera;
 
     tinybvh::BVH_GPU mTLAS = {};
@@ -82,26 +84,31 @@ namespace Tracer {
     // timestamps
     u64 mStartTime = 0, mEndTime = 0;
     double mAccumTime = 0;
-    double mAccumCounts = 0;
+    double mAccumTimeCounts = 0;
 
     // amount of previous samples taken per pixel
-    float mAccumCount = 0;
+    // reset this when objects/camera change!
+    float mAccumSamplesCount = 0;
 
     u32 mFrameBufferInvRelSizePow2 = 1;
     u32 mRaysPerPixelPow2 = 2;
     
     GPU::KernelHandle
-      LoadKernel(const char *path);
+    LoadKernel(const char *path);
     void
-      ReinitCamera(uv2 pixelImageDim);
+    ReinitCamera(uv2 pixelImageDim);
     void
-      FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf);
+    FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf);
+    void
+    CheckMovement();
   public:
     void
-      Init();
+    UpdateInputs(const App_input *pNewState);
     void
-      Tick(const GPU::Cmd_buf *pCmdBuf, i32 imageIndex);
+    Init();
     void
-      OnResize(uv2 newDim);
+    Tick(const GPU::Cmd_buf *pCmdBuf, i32 imageIndex);
+    void
+    OnResize(uv2 newDim);
   };
 }

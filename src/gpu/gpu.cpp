@@ -236,9 +236,9 @@ namespace GPU {
       u32 indexWithHighestScore = 0;
       u32 highestScore = 0;
       for (u32 i = 0; i < deviceCount; i++) {
-	if (highestScore < scores[indexWithHighestScore]) {
+	if (highestScore < scores[i]) {
 	  indexWithHighestScore = i;
-	  highestScore = scores[indexWithHighestScore];
+	  highestScore = scores[i];
 	}
       }
 
@@ -755,7 +755,7 @@ namespace GPU {
     return -1;
   }
 
-  u32 descriptorCounts[2] = {pParams->SampleImageDescriptorCount, pParams->StorageImageDescriptorCount};
+  u32 descriptorCounts[3] = {pParams->SampleImageDescriptorCount, pParams->StorageImageDescriptorCount, 256};
   // create descriptor pool
   VkDescriptorPoolSize poolSizes[] = {
     {
@@ -861,7 +861,7 @@ namespace GPU {
     vkCreateBuffer(this->Device, &bci, 0, &deviceBuffer);
     VkBuffer buffers[2] = {hostAccessibleBuffer, deviceBuffer};
     VkMemoryPropertyFlags necessaryFlags[2] = {
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     };
     VkDeviceMemory memories[2];
@@ -1028,7 +1028,8 @@ namespace GPU {
       .sType = VKTYPE(COMMAND_BUFFER_BEGIN_INFO),
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
     };
-    ASSERT(VK_SUCCESS == vkBeginCommandBuffer(b, &bi), "Could not begin command buffer!");
+    VkResult r = vkBeginCommandBuffer(b, &bi);
+    ASSERT(VK_SUCCESS == r, "Could not begin command buffer!");
     // pre-emptively bind all descriptor sets
     return {.CommandBuffer = b, .WaitTimeline = 0, .QueueTypeEnum = queueTypeEnum};
   }
@@ -1233,7 +1234,9 @@ namespace GPU {
     ctx->BumpAllocs[0][currentFrame].Reset();
     ctx->BumpAllocs[1][currentFrame].Reset();
     const u32 timestampCount = ctx->TimestampCounters[currentFrame];
-    vkGetQueryPoolResults(ctx->Device, ctx->TimestampQueryPools[currentFrame], 0, timestampCount, timestampCount * sizeof (Timestamp), ctx->TimestampBuffers[currentFrame], sizeof (Timestamp), VK_QUERY_RESULT_64_BIT);
+    if (timestampCount) {
+      vkGetQueryPoolResults(ctx->Device, ctx->TimestampQueryPools[currentFrame], 0, timestampCount, timestampCount * sizeof (Timestamp), ctx->TimestampBuffers[currentFrame], sizeof (Timestamp), VK_QUERY_RESULT_64_BIT);
+    }
     for (u32 i = 0; i < timestampCount; i++) {
       Timestamp t = ctx->TimestampBuffers[currentFrame][i];
       *t.UserPointer = t.Value;
@@ -1455,11 +1458,12 @@ namespace GPU {
     bool descCreateCond[] = { createInfo.CreateAsSampled, createInfo.CreateAsStorage };
     VkDescriptorType types[] = { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
     VkImageLayout layouts[] = { VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL };
+    VkDescriptorImageInfo imgInfo[2];
     VkWriteDescriptorSet writes[2];
     u32 writeCount = 0;
     for (u32 i = 0; i < ARRAYCOUNT(descCreateCond); i++) {
       VkDescriptorSet set = ctx->GlobalDescriptorSets[i];
-      VkDescriptorImageInfo imgInfo = {
+      imgInfo[i] = {
 	.imageView = img.View,
 	.imageLayout = layouts[i]
       };
@@ -1469,7 +1473,7 @@ namespace GPU {
 	.dstBinding = 0,
 	.descriptorCount = 1,
 	.descriptorType = types[i],
-	.pImageInfo = &imgInfo
+	.pImageInfo = &imgInfo[i]
       };
       if (descCreateCond[i]) {
 	// (TODO) HANDLE DESCRIPTOR INDEX ALLOC FAILURE
@@ -1481,7 +1485,8 @@ namespace GPU {
 	img.DescriptorHandles[i] = NULL_HANDLE;
       }
     }
-    vkUpdateDescriptorSets(ctx->Device, writeCount, writes, 0, NULL);
+    if (writeCount)
+      vkUpdateDescriptorSets(ctx->Device, writeCount, writes, 0, NULL);
     *pImageOut = img;
     *pMetaOut = m;
   }

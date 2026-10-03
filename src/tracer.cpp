@@ -114,13 +114,16 @@ namespace Tracer {
   World::ReinitCamera(uv2 pixelImageDim) {
     mCamera.PixelWidth = pixelImageDim.x;
     mCamera.PixelHeight = pixelImageDim.y;
+
+    mCamera.Forward = quatrotv3(mCameraQuat, {0, 0, 1});
+    mCamera.Up = quatrotv3(mCameraQuat, {0, 1, 0});
     
     mCamera.AspectRatio = (float)mCamera.PixelWidth / (float)mCamera.PixelHeight;
     float th = mCamera.VFov;
-    float h = tri::tanf(th);
+    float h = bm::tanf(th);
     float vpH = 2 * h * mCamera.FocusDistance;
     float vpW = mCamera.AspectRatio * vpH;
-    v3 cameraRight = cross(mCamera.Up, mCamera.Forward); // cross
+    v3 cameraRight = quatrotv3(mCameraQuat, {1, 0, 0});
     v3 vpU = cameraRight * vpW;
     v3 vpV = mCamera.Up * -vpH;
     mCamera.DeltaU = vpU / (float)mCamera.PixelWidth;
@@ -164,9 +167,8 @@ namespace Tracer {
       materialIndices[i] = hash1(i) % 3;
     }
     materials[0] = {
-      .Color = {0.999, 0.99, 0.999},
-      .Roughness = 0.5f,
-      .RefractionIndex = 1.5f
+      .Color = {6.999, 6.99, 6.999},
+      .Roughness = 0.5f
     };
     materials[1] = {
       .Color = {0.2, 0.23, 0.21},
@@ -174,7 +176,7 @@ namespace Tracer {
       .Flags = TRACER_MATERIAL_FLAG_METALLIC
     };
     materials[2] = {
-      .Color = {1.0, 0.7, 0.2},
+      .Color = {0.95, 0.9f, 0.2f},
       .Roughness = 0.95f
     };
     materials[3] = {
@@ -213,19 +215,33 @@ namespace Tracer {
   }
 
   void
+  World::UpdateInputs(const App_input *pNewState) {
+    mInput.States[Input_stream::PREVIOUS] = mInput.States[Input_stream::CURRENT];
+    mInput.States[Input_stream::CURRENT] = *pNewState;
+  }
+
+  void
   World::Init() {
+#if TRACER_SPECTRAL_MODE
+    fprintf(stderr, "Spectral mode enabled.\n");
+#endif 
     mScratchArena.Init(MEGA(2));
     uv2 swapchainDim = GPU::GetSwapchainDim();
     uv2 imgDim = {swapchainDim.x >> mFrameBufferInvRelSizePow2, swapchainDim.y >> mFrameBufferInvRelSizePow2};
-    mTestAttachment = GPU::CreateImage({
+    mBaseAttachment = GPU::CreateImage({
 	.Format = VK_FORMAT_R32G32B32A32_SFLOAT,
 	.Extent = {imgDim.x, imgDim.y, 1},
-	.Usage = VK_IMAGE_USAGE_SAMPLED_BIT |
-	VK_IMAGE_USAGE_STORAGE_BIT |
+	.Usage  = VK_IMAGE_USAGE_STORAGE_BIT,
+	.CreateAsStorage = true
+      });
+    // tonemapped
+    mTonemapAttachment = GPU::CreateImage({
+	.Format = VK_FORMAT_R8G8B8A8_UNORM,
+	.Extent = {imgDim.x, imgDim.y, 1},
+	.Usage = VK_IMAGE_USAGE_STORAGE_BIT |
 	VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
 	.CreateAsStorage = true
       });
-    mTestKernel = LoadKernel("dat/bin/comp_testfill.spv");
     mSphereTestKernel = LoadKernel("dat/bin/comp_tracer_rt_sphere.spv");
     mShaderKernel = LoadKernel("dat/bin/comp_tracer_shade.spv");
     mScreenWriteKernel = LoadKernel("dat/bin/comp_tracer_sw.spv");
@@ -240,6 +256,56 @@ namespace Tracer {
   }
 
   void
+  World::CheckMovement() {
+    bool moved = false;
+    const float spd = 0.1f;
+    const float rotspd = 0.01f;
+    quat caminv = nquatinv(mCameraQuat);
+    v3 u = {0, 1, 0};
+    v3 globalUpInLocalCoord = quatrotv3(caminv, u);
+    // rotate left/right around global y-axis, not local
+    bool mouseRightDown = mInput.MouseDown(1);
+    iv2 mousePosDelta = mInput.MousePos(Input_stream::CURRENT) - mInput.MousePos(Input_stream::PREVIOUS);
+    quat q = {0, 0, 0, 1};
+    if (mouseRightDown) {
+      q = quatangleaxis(rotspd * (mousePosDelta.x), globalUpInLocalCoord);
+      q = quatangleaxis(rotspd * mousePosDelta.y, {1, 0, 0}) * q;
+      moved = true;
+    }
+    quat temp = (q * mCameraQuat);
+    mCameraQuat = temp;
+    v3 f = quatrotv3(mCameraQuat, {0, 0, 1}); // forward
+    v3 r = quatrotv3(mCameraQuat, {1, 0, 0}); // right
+    bool inputs[] = {
+      mInput.Down('A'),
+      mInput.Down('D'),
+      mInput.Down('S'),
+      mInput.Down('W'),
+      mInput.Down(VK_SHIFT),
+      mInput.Down(VK_SPACE),
+    };
+    v3 dirs[] = {
+      r * -spd,
+      r * spd,
+      f * -spd,
+      f * spd,
+      u * -spd,
+      u * spd
+    };
+    for (u32 i = 0; i < 6; i++) {
+      if (inputs[i]) {
+	mCamera.Position += dirs[i];
+	moved = true;
+      }
+    }
+    if (moved) {
+      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+      ReinitCamera(GPU::GetImage(mBaseAttachment)->GetDim());
+    }
+
+  }
+
+  void
   World::Tick(const GPU::Cmd_buf *pCmdBuf, i32 imageIndex) {
     GPU::Image swapchainImage = GPU::GetSwapchainImage(imageIndex);
     pCmdBuf->ResetTimestamps();
@@ -247,25 +313,10 @@ namespace Tracer {
     if (mTickCount < 1) {
       FirstFrameLoad(pCmdBuf);
     }
-
-    if (GetKeyState(VK_SPACE)) {
-      mCamera.Position.y += 0.03;
-      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
-    }
-    if (GetKeyState('W')) {
-      mCamera.Position.z += 0.03;
-      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
-    }
-    if (GetKeyState('D')) {
-      mCamera.Position.x += 0.03;
-      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
-    }
-    if (GetKeyState('M')) {
-      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
-    }
+    CheckMovement();
 
     // swapchain, to transfer dst
-    GPU::Image_barrier barriers[2];
+    GPU::Image_barrier barriers[3];
     barriers[0] = {
       .SrcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
       .SrcAccessMask = VK_ACCESS_2_NONE,
@@ -282,17 +333,18 @@ namespace Tracer {
       .DstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
       .DstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
       .NewLayout = VK_IMAGE_LAYOUT_GENERAL,
-      .Img = GPU::GetImage(mTestAttachment)
+      .Img = GPU::GetImage(mBaseAttachment)
     };
-    pCmdBuf->ImageBarrier(barriers, 1);
+    pCmdBuf->ImageBarrier(barriers, 2);
     
     // Render here
     pCmdBuf->BindDescriptors(VK_PIPELINE_BIND_POINT_COMPUTE);
-    const GPU::Image *attachImg = GPU::GetImage(mTestAttachment);
+    const GPU::Image *baseImg = GPU::GetImage(mBaseAttachment);
+    GPU::Image *tonemapImg = GPU::GetImage(mTonemapAttachment);
     GPU::Bump_alloc *bmp = GPU::GetBumpAlloc(GPU::CPU_ACCESS);
     GPU::Pointer camP = bmp->Bump<Camera>(1);
     camP.Write(&mCamera, sizeof (mCamera));
-    const uv2 imageDim = attachImg->GetDim();
+    const uv2 imageDim = baseImg->GetDim();
     const u64 rayBufferPointer = mRayBuffers.RayBuffer.Gpu();
     // ray trace
     const u32 maxDepth = 15;
@@ -337,7 +389,6 @@ namespace Tracer {
       Rs_pcd rs = {
 	.Dimensions = imageDim,
 	.Hash = hash,
-	.ImageStorageHandle = attachImg->GetStorageImageIndex(),
 	.Depth = i,
 	.RayCount = rayCount,
 	.RaysPerPixelPow2 = raysPerPixelPow2,
@@ -361,35 +412,38 @@ namespace Tracer {
       pCmdBuf->StageBarrier(&barrier, 1);
     }
 
-    mAccumCount = mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL ? 0.0f : mAccumCount;
+    mAccumSamplesCount = mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL ? 0.0f : mAccumSamplesCount;
     Sw_pcd sw = {
       .Dimensions = imageDim,
-      .ImageStorageHandle = attachImg->GetStorageImageIndex(),
-      .AccumCount = mAccumCount,
+      .ImageStorageHandle = baseImg->GetStorageImageIndex(),
+      .TonemapImageStorageHandle = tonemapImg->GetStorageImageIndex(),
+      .AccumCount = mAccumSamplesCount,
       .RaysPerPixelPow2 = raysPerPixelPow2,
       .RayBuffer = rayBufferPointer
     };
-    mAccumCount += 1;
+    // even if we take >1 spp, we avg. them in the shader, treating them as one.
+    mAccumSamplesCount += 1;
     
     pCmdBuf->SetKernel(mScreenWriteKernel);
     pCmdBuf->PushConstants(&sw);
     uv3 wgc = {
-      .x = ((imageDim.x * imageDim.y) + TRACER_SW_WORKGROUP_SIZE - 1) / TRACER_SW_WORKGROUP_SIZE,
-      .y = 1,
+      .x = ((imageDim.x) + 32 - 1) / 32,
+      .y = ((imageDim.y) + 32 - 1) / 32,
       .z = 1
     };
     pCmdBuf->Dispatch(wgc);
-    // img, to transfer src
+    
+    // tonemap img, to transfer src
     barriers[0] = {
       .SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-      .SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+      .SrcAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
       .DstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
       .DstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
       .NewLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-      .Img = GPU::GetImage(mTestAttachment)
+      .Img = tonemapImg
     };
     pCmdBuf->ImageBarrier(barriers, 1);
-    pCmdBuf->BlitEntireColorImage(GPU::GetImage(mTestAttachment), &swapchainImage, 0, 0, VK_FILTER_NEAREST);
+    pCmdBuf->BlitEntireColorImage(tonemapImg, &swapchainImage, 0, 0, VK_FILTER_NEAREST);
     
     // swapchain, to present
     barriers[0] = {
@@ -402,13 +456,15 @@ namespace Tracer {
     };
     pCmdBuf->ImageBarrier(barriers, 1);
     pCmdBuf->SetTimestamp(false, &mEndTime);
+#if 1
     if (mStartTime && mEndTime) {
       double t = GPU::GetMicrosecondsElapsed(mStartTime, mEndTime);
       mAccumTime += t;
-      mAccumCounts += 1.0;
-      double avg = mAccumTime / mAccumCounts;
-      fprintf(stderr, "rays traced: %u. \tavg time: %f\n", rayCount, avg);
+      mAccumTimeCounts += 1.0;
+      double avg = mAccumTime / mAccumTimeCounts;
+      DEBUGLOG("rays traced: %u. \tavg time: %f", rayCount, avg);
     }
+#endif
     // reset signals
     mProgramSignals = 0;
     mTickCount = MAX(1, mTickCount + 1);
@@ -418,11 +474,12 @@ namespace Tracer {
   World::OnResize(uv2 newDim) {
     if (newDim.x > 0) {
       uv2 fbDim = { newDim.x >> mFrameBufferInvRelSizePow2, newDim.y >> mFrameBufferInvRelSizePow2 };
-      ResizeImage(mTestAttachment, {fbDim.x, fbDim.y, 1});
+      ResizeImage(mBaseAttachment, {fbDim.x, fbDim.y, 1});
+      ResizeImage(mTonemapAttachment, {fbDim.x, fbDim.y, 1});
       ReinitCamera(fbDim);
       // reset averages
       mAccumTime = 0.0;
-      mAccumCounts = 0.0;
+      mAccumTimeCounts = 0.0;
     }
   }
 }

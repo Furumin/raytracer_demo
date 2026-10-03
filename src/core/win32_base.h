@@ -46,6 +46,9 @@ typedef UINT_PTR (CALLBACK *LPOFNHOOKPROC) (HWND, UINT, WPARAM, LPARAM);
 #define LOWORD(l)           ((WORD)(((DWORD)(l)) & 0xffff))
 #define HIWORD(l)           ((WORD)((((DWORD)(l)) >> 16) & 0xffff))
 
+#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
+#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
+
 // key codes
 #define VK_TAB	0x09
 #define VK_SHIFT	0x10

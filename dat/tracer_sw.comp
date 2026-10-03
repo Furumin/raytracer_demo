@@ -4,24 +4,31 @@
 layout(std430, push_constant) uniform Push_T {
   Sw_pcd Data;
 } Push;
-layout(local_size_x = TRACER_SW_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+//layout(local_size_x = TRACER_SW_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 #define _IMG (_images_rgba8[nonuniformEXT(Push.Data.ImageStorageHandle)])
+#define _TIMG (_images_rgba8[nonuniformEXT(Push.Data.TonemapImageStorageHandle)])
 void main() {
   Sw_pcd data = Push.Data;
-  uint pixelIdx = uint(gl_GlobalInvocationID.x);
   uint pixelMax = data.Dimensions.x * data.Dimensions.y;
-  if (pixelIdx >= pixelMax) return;
-  ivec2 imagePos = ivec2(pixelIdx % data.Dimensions.x, pixelIdx / data.Dimensions.x);
+  ivec2 imagePos = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(uvec2(imagePos), data.Dimensions))) return;
+  uint pixelIdx = uint(gl_GlobalInvocationID.x) + gl_GlobalInvocationID.y * data.Dimensions.x;;
   uint raysPerPixel = 1 << data.RaysPerPixelPow2;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
   vec3 accum = vec3(0.0);
   for (uint i = 0; i < raysPerPixel; i++) {
     uint rayIdx = pixelIdx * raysPerPixel + i;
-    Ray ray = loadRayByIdx(rayBuffer, rayIdx);
-    accum += ray.Color;
+    vec3 rayClr = loadRayClrByIdx(rayBuffer, rayIdx);
+    accum += rayClr;
   }
   vec3 accumClr = accum / raysPerPixel;
   vec3 currentAccumClr = (imageLoad(_IMG, imagePos)).xyz;
   currentAccumClr += (accumClr - currentAccumClr) / (data.AccumCount + 1.0);
-  imageStore(_IMG, imagePos, vec4(currentAccumClr, 1.0));    
+  imageStore(_IMG, imagePos, vec4(currentAccumClr, 1.0));
+
+  // tonemapping, but for now, just store direct image (test)
+  // reinhard
+  currentAccumClr = currentAccumClr / (currentAccumClr + 1.0);
+  imageStore(_TIMG, imagePos, vec4(currentAccumClr, 1.0));
 }

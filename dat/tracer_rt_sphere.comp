@@ -97,9 +97,9 @@ bool rtSphereKernel(in uint rayIdx) {
   Ray ray;
   Camera c = CameraBuffer(data.CameraPointer).Data;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
-  #if !TRACER_RAY_HIT_UNIFIED
+#if !TRACER_RAY_HIT_UNIFIED
   HitChunkBuffer hitBuffer = HitChunkBuffer(data.Buffers[RT_PCD_HIT_BUF]);
-  #endif
+#endif
   BvhBuffer bvhBuffer = BvhBuffer(data.Buffers[RT_PCD_TLAS_BUF]);
   Hit_record h;
   if (data.Depth == 0) {
@@ -109,32 +109,24 @@ bool rtSphereKernel(in uint rayIdx) {
     uint rayI = rayIdx & data.RaysPerPixelPow2;
     imagePixelPos.x += 0.5 * (randomFloatNorm(data.Hash + rayI));
     imagePixelPos.y += 0.5 * (randomFloatNorm(hash1(data.Hash + rayI)));
-    vec3 pixelPos = rayDirFromPixelPos(c, imagePixelPos);
-    ray.Direction = pixelPos - ray.Position;
+    ray.Direction = rayDirFromPixelPos(c, imagePixelPos) - ray.Position;
     ray.Data = 0;
     ray.Color = vec3(1.0);
-    
-    h.HitPosition = vec3(FLOAT_INF);
-    h.Data = 0;
-    h.UV = vec2(0.0);
-    h.Normal = vec2(0.0);
   } else {
     // fetch ray
-    ray = loadRayByIdx(rayBuffer, rayIdx);
+    ray = loadRayByIdx(rayBuffer, rayIdx, false, true);
   }
   ray.T = FLOAT_INF;
       
   uint rayDepth = ray.Data >> 27;
   if (rayDepth != data.Depth) return true;
 
-  uint objId = 0x80000000;
-  bool hit = false;
   float tMin = -FLOAT_INF;
   ObjectBuffer objectBuffer = ObjectBuffer(data.Buffers[RT_PCD_OBJ_BUF]);
   vec3 sphereCenter;
   uint materialIndex;
-  hit = traverse(rayIdx, bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex);
-  if (hit) {
+  uint objId = 0x80000000; // invalid object ID
+  if (traverse(rayIdx, bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex)) {
     ray.T = tMin;
     // increment depth
     rayDepth++;
@@ -142,7 +134,7 @@ bool rtSphereKernel(in uint rayIdx) {
     h.Data = 0;
     h.UV = vec2(0.0);
     vec3 normal = normalize(h.HitPosition - sphereCenter);
-    float zSign = sign(normal.z);
+    const float zSign = sign(normal.z);
     uint nY = floatBitsToUint(normal.y);
     nY &= (~1);
     nY |= (zSign > 0.0 ? 1 : 0);
@@ -153,7 +145,7 @@ bool rtSphereKernel(in uint rayIdx) {
     h.Data = 0xffffffff;
   }
   ray.Data = (rayDepth << 27) | materialIndex;
-  storeRayByIdx(rayBuffer, rayIdx, ray);
+  storeRayByIdx(rayBuffer, rayIdx, ray, data.Depth == 0, false);
 #if TRACER_RAY_HIT_UNIFIED
   storeHitByIdx(rayBuffer, rayIdx, h);
 #else

@@ -106,43 +106,59 @@ void getMaterialChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk)
 }
 
 #define _RAY_BUF_ACCESS(prop) buf.Data[chunkIdx]. prop [idxInChunk]
-Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx) {
+Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loadPos) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   Ray r;
-  r.Position.x = _RAY_BUF_ACCESS(PosX);
-  r.Position.y = _RAY_BUF_ACCESS(PosY);
-  r.Position.z = _RAY_BUF_ACCESS(PosZ);
+  if (loadPos) {
+    r.Position.x = _RAY_BUF_ACCESS(PosX);
+    r.Position.y = _RAY_BUF_ACCESS(PosY);
+    r.Position.z = _RAY_BUF_ACCESS(PosZ);
+  }
   r.Data = _RAY_BUF_ACCESS(Data);
-
   r.Direction.x = _RAY_BUF_ACCESS(DirX);
   r.Direction.y = _RAY_BUF_ACCESS(DirY);
   r.Direction.z = _RAY_BUF_ACCESS(DirZ);
 
-  r.Color.x = _RAY_BUF_ACCESS(ColorX);
-  r.Color.y = _RAY_BUF_ACCESS(ColorY);
-  r.Color.z = _RAY_BUF_ACCESS(ColorZ);
+  if (loadColor) {
+    r.Color.x = _RAY_BUF_ACCESS(ColorX);
+    r.Color.y = _RAY_BUF_ACCESS(ColorY);
+    r.Color.z = _RAY_BUF_ACCESS(ColorZ);
+  }
   
   return r;
 }
 
-void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r) {
+vec3 loadRayClrByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
+  vec3 v;
+  v.x = _RAY_BUF_ACCESS(ColorX);
+  v.y = _RAY_BUF_ACCESS(ColorY);
+  v.z = _RAY_BUF_ACCESS(ColorZ);
+  return v;
+}
 
-  _RAY_BUF_ACCESS(PosX) = r.Position.x;
-  _RAY_BUF_ACCESS(PosY) = r.Position.y;
-  _RAY_BUF_ACCESS(PosZ) = r.Position.z;
+void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storeColor, bool storePos) {
+  uint chunkIdx, idxInChunk;
+  getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
+  if (storePos) {
+    _RAY_BUF_ACCESS(PosX) = r.Position.x;
+    _RAY_BUF_ACCESS(PosY) = r.Position.y;
+    _RAY_BUF_ACCESS(PosZ) = r.Position.z;
+  }
   _RAY_BUF_ACCESS(Data) = r.Data;
 
   _RAY_BUF_ACCESS(DirX) = r.Direction.x;
   _RAY_BUF_ACCESS(DirY) = r.Direction.y;
   _RAY_BUF_ACCESS(DirZ) = r.Direction.z;
-
-  _RAY_BUF_ACCESS(ColorX) = r.Color.x;
-  _RAY_BUF_ACCESS(ColorY) = r.Color.y;
-  _RAY_BUF_ACCESS(ColorZ) = r.Color.z;
+  if (storeColor) {
+    _RAY_BUF_ACCESS(ColorX) = r.Color.x;
+    _RAY_BUF_ACCESS(ColorY) = r.Color.y;
+    _RAY_BUF_ACCESS(ColorZ) = r.Color.z;
+  }
 }
+
 Hit_record loadHitByIdx(in HitChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);

@@ -18,8 +18,8 @@ void kernel(in uint rayIdx) {
 #endif
   MaterialChunkBuffer materialBuffer = MaterialChunkBuffer(data.MaterialBuffer);
   
-  vec3 clr = vec3(0.0); // bg
-  Ray ray = loadRayByIdx(rayBuffer, rayIdx);
+  vec3 clr = vec3(0.0);
+  Ray ray = loadRayByIdx(rayBuffer, rayIdx, true, false);
   uint materialIndex = ray.Data & TRACER_MATERIAL_INDEX_MASK;
   if (materialIndex != TRACER_MATERIAL_INDEX_MASK) {
     if (data.Depth != 0) clr = vec3(1.0);
@@ -50,14 +50,14 @@ void kernel(in uint rayIdx) {
     } else if ((m.Flags & TRACER_MATERIAL_FLAG_METALLIC) != 0) {
       ray.Direction = reflect(ray.Direction, norm);
     } else {
-      ray.Direction = normalize(norm + randomHemisphereVec3(hash, norm) * m.Roughness);
+      ray.Direction = (norm + randomHemisphereVec3(hash, norm) * m.Roughness);
     }
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
   } else {
     clr = vec3(0.97, 1.0, 1.0);
   }
   ray.Color.xyz *= clr;
-  storeRayByIdx(rayBuffer, rayIdx, ray);
+  storeRayByIdx(rayBuffer, rayIdx, ray, true, true);
 }
 
 void main() {

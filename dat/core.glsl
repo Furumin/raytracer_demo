@@ -36,6 +36,34 @@ uint hash1(uint x) {
   return x;
 }
 
+float signNotZero(in float f) {
+  return f >= 0.0 ? 1.0 : -1.0;
+}
+
+vec2 signNotZero(in vec2 v) {
+  return vec2(signNotZero(v.x), signNotZero(v.y));
+}
+
+// x and y are signed normalized floats 
+vec3 octadecode(vec2 pos) {
+  vec3 v = vec3(pos, 0.0);
+  v.z = 1.0f - abs(v.x) - abs(v.y);
+  float t = max(-v.z, 0.0);
+  v.x += (v.x >= 0.0f ? -t : t);
+  v.y += (v.y >= 0.0f ? -t : t);
+  return (v);
+}
+
+/* Assumes v is a unit vector. Returns a vec2 on the unit square [-1, 1]^2 */
+vec2 octaencode(in vec3 v) {
+    float l1norm = abs(v.x) + abs(v.y) + abs(v.z);
+    vec2 result = v.xy * (1.0 / l1norm);
+    if (v.z < 0.0) {
+        result = (1.0 - abs(result.yx)) * signNotZero(result.xy);
+    }
+    return result;
+}
+
 // returns random float [-1, 1]
 float randomFloatNorm(uint seed) {
   return float((hash1(seed) / 4294967295.0)) * 2.0 - 1.0;
@@ -43,7 +71,8 @@ float randomFloatNorm(uint seed) {
 
 // returns random vec3 INSIDE unit sphere
 vec3 randomUnitVec3(uint seed) {
-  return vec3(randomFloatNorm(seed), randomFloatNorm(hash1(seed+1)), randomFloatNorm(hash1(seed+2)));
+  vec2 v = vec2(randomFloatNorm(seed), randomFloatNorm(hash1(seed+1)));
+  return octadecode(v);
 }
 
 vec3 randomHemisphereVec3(uint seed, vec3 normal) {

@@ -365,18 +365,18 @@ template class impl::BVHBase<float, uint32_t>;
 template class impl::BVH<float, uint32_t>;
 template class impl::BVH_Verbose<float, uint32_t>;
 template class impl::BVH_GPU<float, uint32_t>;
-template class impl::MBVH<4, float, uint32_t>;
-template class impl::MBVH<8, float, uint32_t>;
+  //template class impl::MBVH<4, float, uint32_t>;
+  //template class impl::MBVH<8, float, uint32_t>;
 template class impl::BVH4_GPU<float, uint32_t>;
 template class impl::BVH4_CPU<float, uint32_t>;
-template class impl::BVH8_CWBVH<float, uint32_t>;
-template class impl::BVH8_CPU<float, uint32_t>;
+  //template class impl::BVH8_CWBVH<float, uint32_t>;
+  //template class impl::BVH8_CPU<float, uint32_t>;
 template class impl::BLASInstance<float, uint32_t>;
 #ifdef DOUBLE_PRECISION_SUPPORT
 template class impl::BVHBase<double, uint64_t>;
 template class impl::BVH<double, uint64_t>;
 template class impl::BVH_Verbose<double, uint64_t>;
-template class impl::MBVH<4, double, uint64_t>;
+  //template class impl::MBVH<4, double, uint64_t>;
 template class impl::BVH4_CPU<double, uint64_t>;
 template class impl::BLASInstance<double, uint64_t>;
 #endif

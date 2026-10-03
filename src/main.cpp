@@ -22,6 +22,10 @@
 
 // includes (ext)
 // This include alone increases debug compile times by 0.6 seconds... :(
+#define NO_DOUBLE_PRECISION_SUPPORT
+#define NO_CUSTOM_GEOMETRY
+#define NO_VOXEL_SUPPORT
+#define NO_THREADED_BUILDS
 #include "ext/bvh/tiny_bvh.h"
 
 // includes (app)
@@ -32,11 +36,60 @@
 
 // globals
 App_globals gAppGlobals;
+volatile App_input gAppInput;
 volatile bool gRunApp = true;
+volatile bool gInputLatched = false;
 
 LRESULT CALLBACK
 WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
   switch(uMsg) {
+  case WM_KEYUP:
+  case WM_SYSKEYUP:
+  case WM_KEYDOWN:
+  case WM_SYSKEYDOWN: {
+    u32 state = (lParam & 0x80000000) ? 0 : 1;
+    i32 ind = _App_input_details::GetAppInputIndex((u32)wParam);
+    ind = CLAMP(ind, 0, APP_KEY_COUNT);
+    u8 v = (u8)gAppInput.KeyStates[ind];
+    _App_input_details::SetKey(&v, state);
+    gAppInput.KeyStates[ind] = v;
+    break;
+  };
+  case WM_LBUTTONDOWN:
+  case WM_RBUTTONDOWN: {
+    u32 state = 1;
+    u32 masks[] = {MK_LBUTTON, MK_RBUTTON};
+    for (u32 i = 0; i < ARRAYCOUNT(gAppInput.MouseStates); i++) {
+      i32 ind = i;
+      state = (masks[i] & (u32)wParam) ? 1 : 0;
+      if (!state) continue;
+      u8 v = (u8)gAppInput.MouseStates[ind];
+      _App_input_details::SetKey(&v, state);
+      gAppInput.MouseStates[ind] = v;
+    }
+    break;
+  };
+  case WM_LBUTTONUP:
+  case WM_RBUTTONUP: {
+    u32 state = 0;
+    u32 masks[] = {MK_LBUTTON, MK_RBUTTON};
+    for (u32 i = 0; i < ARRAYCOUNT(gAppInput.MouseStates); i++) {
+      i32 ind = i;
+      state = (masks[i] & (u32)wParam) ? 1 : 0;
+      if (state) continue; // dont register key as down
+      u8 v = (u8)gAppInput.MouseStates[ind];
+      _App_input_details::SetKey(&v, state);
+      gAppInput.MouseStates[ind] = v;
+    }
+    break;
+    break;
+  };
+  case WM_MOUSEMOVE: {
+    iv2 p {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    gAppInput.MousePosition.x = p.x;
+    gAppInput.MousePosition.y = p.y;
+    break;
+  };
   case WM_QUIT:
   case WM_DESTROY:
   case WM_CLOSE: {
@@ -96,6 +149,13 @@ int AppMainProc(void *param) {
   while (gRunApp) {
     Sleep(10);
     i32 imageIndex = GPU::AcquireSwapchain();
+
+    // Latch input
+    App_input inp;
+    memcpy(V_(&inp), V_(&gAppInput), sizeof (gAppInput));
+    gInputLatched = true;
+    t.UpdateInputs(&inp);
+    
     // Make sure to poll AFTER acquiring swapchain!
     GPU::PollResources();
     if (imageIndex < 0) {
@@ -144,8 +204,22 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* pCmdLineA, int nCmdS
 	run = false;
       TranslateMessage(&msg);
       DispatchMessage(&msg);
-      Sleep(2);
     }
+    if (gInputLatched) {
+      // reset all key/mouse states
+      for (i32 i = 0; i < APP_KEY_COUNT; i++) {
+	u8 v = (u8)gAppInput.KeyStates[i];
+	_App_input_details::ResetKeyStates(&v);
+	gAppInput.KeyStates[i] = v;
+      }
+      for (u32 i = 0; i < ARRAYCOUNT(gAppInput.MouseStates); i++) {
+	u8 v = (u8)gAppInput.MouseStates[i];
+	_App_input_details::ResetKeyStates(&v);
+	gAppInput.MouseStates[i] = v;
+      }
+      gInputLatched = false;
+    }
+    Sleep(0);
   }
   gRunApp = false;
   return 0;

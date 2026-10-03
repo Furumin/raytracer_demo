@@ -73,21 +73,23 @@ namespace Tracer {
   };
 
   struct Ray_chunk {
-    float PosX  [TRACER_RAY_CHUNK_SIZE];
-    float PosY  [TRACER_RAY_CHUNK_SIZE];
-    float PosZ  [TRACER_RAY_CHUNK_SIZE];
     u32 Data    [TRACER_RAY_CHUNK_SIZE]; // 5 MSB is depth, rest is material index
     float DirX  [TRACER_RAY_CHUNK_SIZE];
     float DirY  [TRACER_RAY_CHUNK_SIZE];
     float DirZ  [TRACER_RAY_CHUNK_SIZE];
     float T     [TRACER_RAY_CHUNK_SIZE];
-    float ColorX[TRACER_RAY_CHUNK_SIZE];
-    float ColorY[TRACER_RAY_CHUNK_SIZE];
-    float ColorZ[TRACER_RAY_CHUNK_SIZE];
 
 #if TRACER_RAY_HIT_UNIFIED
     Hit_record_chunk_base Hit;
 #endif
+
+    float ColorX[TRACER_RAY_CHUNK_SIZE];
+    float ColorY[TRACER_RAY_CHUNK_SIZE];
+    float ColorZ[TRACER_RAY_CHUNK_SIZE];
+
+    float PosX  [TRACER_RAY_CHUNK_SIZE];
+    float PosY  [TRACER_RAY_CHUNK_SIZE];
+    float PosZ  [TRACER_RAY_CHUNK_SIZE];
   };
 
   struct Sphere {
@@ -171,7 +173,7 @@ namespace Tracer {
 #define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
 #define TRACER_RS_WORKGROUP_SIZE (128)
-#define TRACER_RS_COARSE_FACTOR (1)//(2)
+#define TRACER_RS_COARSE_FACTOR (1)
 #define RT_PCD_RAY_BUF (0)
 #define RT_PCD_TLAS_BUF (1)
 #define RT_PCD_OBJ_BUF (2)
@@ -216,9 +218,8 @@ namespace Tracer {
   struct Sw_pcd {
     uv2 Dimensions;
     u32 ImageStorageHandle;
+    u32 TonemapImageStorageHandle;
     float AccumCount;
-
-    u32 _PADDING0[1];
     u32 RaysPerPixelPow2;
     u64 RayBuffer;
   };
