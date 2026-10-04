@@ -6,6 +6,7 @@
 #define APP_CPP_CODE (1)
 #define VULKAN_VALIDATE (1)
 #define DESC_POOL_DESC_CAPACITY (KILO(32))
+#define GPU_USE_IMGUI (1)
 
 // Permanent defines
 #define VK_USE_PLATFORM_WIN32_KHR (1)
@@ -28,6 +29,15 @@
 #define NO_THREADED_BUILDS
 #include "ext/bvh/tiny_bvh.h"
 
+// imgui
+#if GPU_USE_IMGUI
+#define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD (1)
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_vulkan.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#endif
+
 // includes (app)
 #include "common.h"
 #include "gpu/gpu.h"
@@ -42,6 +52,10 @@ volatile bool gInputLatched = false;
 
 LRESULT CALLBACK
 WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+#if GPU_USE_IMGUI
+  if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam))
+    return true;
+#endif
   switch(uMsg) {
   case WM_KEYUP:
   case WM_SYSKEYUP:

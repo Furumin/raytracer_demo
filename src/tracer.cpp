@@ -136,7 +136,7 @@ namespace Tracer {
     v3 vpUL = mCamera.Position + mCamera.Forward * mCamera.FocusDistance - ( vpU + vpV ) * 0.5;
     mCamera.Pixel00 = vpUL + (mCamera.DeltaU + mCamera.DeltaV) * 0.5f;
 
-    mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+    mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
   }
 
   void
@@ -197,7 +197,7 @@ namespace Tracer {
       .Roughness = 0.95f
     };
     materials[4] = {
-      .Color = {1.5, 1.5, 1.5},
+      .Color = {0.2, 3.5, 4.5},
       .Roughness = 0.95f,
       .Flags = TRACER_MATERIAL_FLAG_EMISSIVE
     };
@@ -272,12 +272,12 @@ namespace Tracer {
     mCamera.Forward = {0, 0, 1};
     mCamera.Up = {0, 1, 0};
     mCamera.VFov = RadFromDeg(45.0f);
-    mCamera.FocusDistance = 3.4f;
+    mCamera.FocusDistance = 10.0f;
     ReinitCamera(imgDim);
   }
 
   bool
-  World::CheckMovement() {
+  World::PollMovement() {
     bool moved = false;
     const float spd = 0.1f;
     const float rotspd = 0.01f;
@@ -320,10 +320,91 @@ namespace Tracer {
       }
     }
     if (moved) {
-      mProgramSignals |= RAY_INTERSECT_PCD_NO_HYST_SIGNAL;
+      mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
       ReinitCamera(GPU::GetImage(mBaseAttachment)->GetDim());
     }
     return moved;
+  }
+
+  static bool
+  ShouldEnablePartialRendering(u32 rayCount, u32 rayCapa) {
+    return rayCount > rayCapa;
+  }
+
+  void
+  World::PollEditor(const Editor_params &params) {
+    bool resetTimer = false;
+    bool resetColorAccum = false;
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::Begin("Editor");
+    ImGui::SeparatorText("Stats");
+    ImGui::PushItemWidth(ImGui::GetFontSize() * 8.0f);
+    if (mStartTime && mEndTime > mStartTime) {
+      double t = GPU::GetMicrosecondsElapsed(mStartTime, mEndTime);
+      mAccumTime += t;
+      mAccumTimeCounts += 1.0;
+      double avg = mAccumTime / mAccumTimeCounts;
+      ImGui::Text("Ray count / Ray buffer capacity : %u / %u", params.RayCountThisFrame, params.RayCapacity);
+      ImGui::Text("Trace time (microsecs) / FPS: %f / %f", avg, (1000000.0) / avg);
+    }
+    if (ShouldEnablePartialRendering(params.TotalRayCount, params.RayCapacity)) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.99f, 1.0f, 0.1f, 1.0f));
+      ImGui::Text("WARNING: Partial rendering is currently on.");
+      ImGui::PopStyleColor(1);
+    }
+    ImGui::PopItemWidth();
+    ImGui::SeparatorText("Camera");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    resetColorAccum |= ImGui::InputFloat("Focus distance", &mCamera.FocusDistance, 0.1f, 1.0f, "%.1f");
+    ImGui::SeparatorText("Other");
+    bool forceNoColorAccum = mPermanentProgramSignals & TRACER_PS_NO_ACCUM_BIT;
+    ImGui::Checkbox("Turn off color accumulation", &forceNoColorAccum);
+    mPermanentProgramSignals = forceNoColorAccum ?  (mPermanentProgramSignals | TRACER_PS_NO_ACCUM_BIT) : (mPermanentProgramSignals & ~(TRACER_PS_NO_ACCUM_BIT));
+    i32 d = mMaxDepth;
+    ImGui::SetNextItemWidth(MIN(ImGui::GetContentRegionAvail().x * 0.6f, 80.0f));
+    resetTimer |= ImGui::SliderInt("Depth", &d, 0, 15);
+    mMaxDepth = d;
+    d = mRaysPerPixelPow2;
+    ImGui::SetNextItemWidth(MIN(ImGui::GetContentRegionAvail().x * 0.6f, 80.0f));
+    bool changeSPP = ImGui::SliderInt("SPP (pow 2)", &d, 0, 8);
+    mRaysPerPixelPow2 = d;
+    ImGui::SameLine(); ImGui::Text("SPP: %u", (1 << mRaysPerPixelPow2));
+    resetTimer |= changeSPP;
+    resetColorAccum |= changeSPP;
+    d = mFrameBufferInvRelSizePow2;
+    ImGui::SetNextItemWidth(MIN(ImGui::GetContentRegionAvail().x * 0.6f, 80.0f));
+    bool changeDim = ImGui::SliderInt("Framebuffer size rel. window (pow 2)", &d, 0, 4);
+    mFrameBufferInvRelSizePow2 = d;
+    if (changeDim) {
+      GPU::WaitIdle();
+      OnResize(GPU::GetSwapchainDim());
+    }
+    ImGui::End();
+
+    if (resetTimer) {
+      mAccumTime = mAccumTimeCounts = 0.0;
+    }
+    if (resetColorAccum) {
+      mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
+    }
+  }
+
+  void
+  World::RenderEditor(GPU::Image *swapchainImg, const GPU::Cmd_buf *pCmdBuf) {
+    ImGui::Render();
+    GPU::Attachment_info info = {
+      .Img = swapchainImg
+    };
+    pCmdBuf->BeginRendering({
+	.LayerCount = 1,
+	.ColorAttachmentCount = 1,
+	.PColorAttachments = &info,
+      }, {}, GPU::GetSwapchainDim());
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pCmdBuf->CommandBuffer);
+    pCmdBuf->EndRendering();
   }
 
   void
@@ -338,12 +419,19 @@ namespace Tracer {
     GPU::Image swapchainImage = GPU::GetSwapchainImage(imageIndex);
     u32 raysPerPixelPow2 = mRaysPerPixelPow2;
     const u32 totalRayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
+    u32 rayIdxOffset = 0;
+    u32 effRayCount = totalRayCount;
     pCmdBuf->ResetTimestamps();
     pCmdBuf->SetTimestamp(true, &mStartTime);
-    bool moved = CheckMovement();
-    if (moved && totalRayCount > rayCapacity) {
-      //      raysPerPixelPow2 = 0;
-    }
+    
+    mProgramSignals = mPermanentProgramSignals;
+    // may set a signal, so important to poll editor after signal reset
+    PollMovement();
+    PollEditor({
+	.RayCountThisFrame = effRayCount,
+	.TotalRayCount = totalRayCount,
+	.RayCapacity = rayCapacity});
+    
     // swapchain, to transfer dst
     GPU::Image_barrier barriers[3];
     barriers[0] = {
@@ -373,10 +461,8 @@ namespace Tracer {
     const u64 rayBufferPointer = mRayBuffers.RayBuffer.Gpu();
     // ray trace
     const u32 maxDepth = mMaxDepth;
-    u32 rayIdxOffset = 0;
-    u32 effRayCount = totalRayCount;
     // only render part of frame
-    if (totalRayCount > rayCapacity) {
+    if (ShouldEnablePartialRendering(totalRayCount, rayCapacity)) {
       // amount of frames needed to render to whole screen
       const u32 framesPerFullScreen = (totalRayCount + rayCapacity - 1) / rayCapacity;
       // global offset of ray idx
@@ -406,7 +492,7 @@ namespace Tracer {
 	.RaysPerPixelPow2 = raysPerPixelPow2,
 	.RayCount = effRayCount,
 	.Depth = i,
-	.PinholeRadius = (mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL) ? 0.0f : 0.05f
+	.PinholeRadius = (mProgramSignals & TRACER_PS_NO_ACCUM_BIT) ? 0.0f : 0.05f
       };
       rt.Buffers[RT_PCD_RAY_BUF] = rayBufferPointer;
       rt.Buffers[RT_PCD_TLAS_BUF] = mObjectBuffers.GPUTLAS[Object_type::SPHERE].Gpu();
@@ -467,7 +553,7 @@ namespace Tracer {
     };
     pCmdBuf->ImageBarrier(barriers, 1);
 
-    mAccumSamplesCount = mProgramSignals & RAY_INTERSECT_PCD_NO_HYST_SIGNAL ? 0.0f : mAccumSamplesCount;
+    mAccumSamplesCount = mProgramSignals & TRACER_PS_NO_ACCUM_BIT ? 0.0f : mAccumSamplesCount;
     Sw_pcd sw = {
       .Dimensions = imageDim,
       .ImageStorageHandle = baseImg->GetStorageImageIndex(),
@@ -502,34 +588,31 @@ namespace Tracer {
     pCmdBuf->ImageBarrier(barriers, 1);
     pCmdBuf->BlitEntireColorImage(tonemapImg, &swapchainImage, 0, 0, VK_FILTER_NEAREST);
     
-    // swapchain, to present
+    // swapchain, to clr attach opt (render editor)
     barriers[0] = {
       .SrcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
       .SrcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+      .DstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .DstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      .NewLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .Img = &swapchainImage
+    };
+    pCmdBuf->ImageBarrier(barriers, 1);
+    pCmdBuf->SetTimestamp(false, &mEndTime);
+    
+    RenderEditor(&swapchainImage, pCmdBuf);
+
+    // swapchain, to present opt
+    barriers[0] = {
+      .SrcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .SrcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
       .DstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
       .DstAccessMask = VK_ACCESS_2_NONE,
       .NewLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
       .Img = &swapchainImage
     };
     pCmdBuf->ImageBarrier(barriers, 1);
-    pCmdBuf->SetTimestamp(false, &mEndTime);
-#if 1
-    if (mStartTime && mEndTime > mStartTime) {
-      double t = GPU::GetMicrosecondsElapsed(mStartTime, mEndTime);
-      mAccumTime += t;
-      mAccumTimeCounts += 1.0;
-      double avg = mAccumTime / mAccumTimeCounts;
-      // if the difference is too big, printing average wont help much; print t instead and reset accums
-      double d = (t / avg);
-      if (d > 1.3 || d < (1.0 / 1.3)) {
-	avg = t;
-	mAccumTime = mAccumTimeCounts = 0.0;
-      }
-      DEBUGLOG("rays traced: %u. \tavg time: %f", effRayCount, avg);
-    }
-#endif
     // reset signals
-    mProgramSignals = 0;
     mTickCount = MAX(1, mTickCount + 1);
   }
 

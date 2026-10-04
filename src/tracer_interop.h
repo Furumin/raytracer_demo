@@ -166,8 +166,9 @@ namespace Tracer {
     v4 rmax;// .w is firstTri; // total: 64 bytes
   };
 
-  // Push constants
-#define RAY_INTERSECT_PCD_NO_HYST_SIGNAL (2)
+  // program signals (abbrev. PS)
+#define TRACER_PS_NO_ACCUM_BIT (2)
+  
   struct Ray_intersect_pcd {
     u64 CameraPointer;
     u32 Hash;

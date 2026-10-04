@@ -233,6 +233,36 @@ namespace GPU {
     u64 *UserPointer; // destination to store value
   };
 
+  // rendering
+  struct Attachment_info {
+    VkStructureType          SType = VKTYPE(RENDERING_ATTACHMENT_INFO);
+    const void*              PNext;
+    union {
+      VkImageView              ImageView; // converted to this when render begins
+      Image *Img; // user sets this
+    };
+    VkImageLayout            ImageLayout;
+    VkResolveModeFlagBits    ResolveMode;
+    VkImageView              ResolveImageView;
+    VkImageLayout            ResolveImageLayout;
+    VkAttachmentLoadOp       LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    VkAttachmentStoreOp      StoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkClearValue             ClearValue;
+  };
+
+  struct Rendering_info {
+    VkStructureType                     sType = VKTYPE(RENDERING_INFO);
+    const void*                         PNext;
+    VkRenderingFlags                    Flags;
+    VkRect2D                            RenderArea;
+    uint32_t                            LayerCount;
+    uint32_t                            ViewMask;
+    uint32_t                            ColorAttachmentCount;
+    Attachment_info*    PColorAttachments;
+    Attachment_info*    PDepthAttachment;
+    Attachment_info*    PStencilAttachment;
+  };
+
   struct Cmd_buf {
     VkCommandBuffer CommandBuffer;
     Timeline WaitTimeline;
@@ -263,6 +293,10 @@ namespace GPU {
     // call IF settimestamp is used
     void
     ResetTimestamps() const;
+    void
+    BeginRendering(const Rendering_info &pInfo, const iv2 areaTL, const uv2 areaWH) const;
+    void
+    EndRendering() const;
   };
 
 #define BUMP_ALLOC_ALIGNMENT (16)
@@ -384,6 +418,9 @@ namespace GPU {
     
     void
     BufferOffsetFromPointer(Pointer p, VkBuffer *pBufferOut, u32 *pOffsetOut) const;
+
+    void
+    InitImgui();
 
   private:
     Vulkan_queue_family_indices

@@ -29,7 +29,8 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
     Material m = loadMaterialByIdx(materialBuffer, materialIndex);
     clr = m.Color;
     uint signBit = floatBitsToUint(hit.Normal.y) & 1;
-    float dirZ = sqrt(1.0 - dot(hit.Normal, hit.Normal));
+    // use absolute value in case len(hit.Normal) > 1 (due to fp precision error)
+    float dirZ = sqrt(abs(1.0 - dot(hit.Normal, hit.Normal)));
     dirZ *= (signBit == 1 ? 1.0 : -1.0);
     vec3 norm = vec3(hit.Normal, dirZ);
     bool frontFace = dot(norm, ray.Direction) < 0.0; // positive if front facing

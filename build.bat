@@ -4,7 +4,7 @@ if "%1" == "dev" (
    echo Dev mode, no optimizations enabled.
    set "flags=-g -O0 -DFLAG_GCC_DEBUG -Wall"   
 ) else (
-   set "flags=-O3 -g -mfma -Wall"
+   set "flags=-O3 -g -Wall"
    echo Release mode, Heavy optimizations.
 
 )
@@ -17,9 +17,7 @@ set vulkanlibpath=lib
 
 set supresslinkerwarning=-Wl,--disable-stdcall-fixup -Wl,--enable-stdcall-fixup
 echo Compiling...
-
-g++ %flags% %extraflags% %sanitizecompileflags% -march=native -std=c++17 -c src/main.cpp -finput-charset=UTF-8 -mwindows -o out/app.o %tracypathinclude%
-echo Compiled. Now linking...
-g++ out/app.o out/bvh.o -mwindows -o app.exe -L%vulkanlibpath% -lvulkan-1 -lWinmm -lkernel32 %sanitizelinkflags%
+set "imguilink=out/imgui/imgui.o out/imgui/imgui_draw.o out/imgui/imgui_impl_vulkan.o out/imgui/imgui_impl_win32.o out/imgui/imgui_tables.o out/imgui/imgui_widgets.o"
+g++ %flags% -mavx2 -mfma -std=c++17 src/main.cpp out/bvh.o %imguilink% -finput-charset=UTF-8 -mwindows -o app.exe -Isrc/ext/imgui/ -L%vulkanlibpath% -lvulkan-1 -lWinmm -lkernel32 -ldwmapi
 echo Done.
 

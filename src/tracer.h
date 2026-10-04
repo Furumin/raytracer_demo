@@ -78,7 +78,8 @@ namespace Tracer {
     tinybvh::BLASInstance mInstances[2] = {};
     tinybvh::BVH_GPU mBVHs[2] = {};
     u64 mTickCount = 0;
-    u32 mProgramSignals = 0;
+    u32 mProgramSignals = 0; // reset every frame
+    u32 mPermanentProgramSignals = 0; // never reset
     u32 mSphereCount;
 
     // timestamps
@@ -103,7 +104,16 @@ namespace Tracer {
     void
     FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf);
     bool
-    CheckMovement();
+    PollMovement();
+    struct Editor_params {
+      u32 RayCountThisFrame;
+      u32 TotalRayCount;
+      u32 RayCapacity;
+    };
+    void
+    PollEditor(const Editor_params &params);
+    void
+    RenderEditor(GPU::Image *pSwapchainImg, const GPU::Cmd_buf *pCmdBuf);
   public:
     void
     UpdateInputs(const App_input *pNewState);

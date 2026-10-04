@@ -463,6 +463,63 @@ namespace GPU {
     *pOffsetOut = p.GetBufferOffset();
   }
 
+  // https://vkguide.dev/docs/new_chapter_2/vulkan_imgui_setup/
+  void
+  Ctx::InitImgui() {
+    VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+					  { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+					  { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+					  { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+					  { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+					  { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
+
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 1000;
+    pool_info.poolSizeCount = ARRAYCOUNT(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+
+    // Abandon descriptor pool after creating; no need to delete when OS deletes for us.
+    VkDescriptorPool imguiPool;
+    vkCreateDescriptorPool(this->Device, &pool_info, nullptr, &imguiPool);
+    
+    // 2: initialize imgui library
+
+    // this initializes the core structures of imgui
+    ImGui::CreateContext();
+
+    ImGui_ImplWin32_Init(this->WindowHandle); 
+
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = this->Instance;
+    init_info.PhysicalDevice = this->PhysicalDevice;
+    init_info.Device = this->Device;
+    init_info.Queue = this->Queues[Queue_type::GENERAL];
+    init_info.DescriptorPool = imguiPool;
+    init_info.MinImageCount = 2;
+    init_info.ImageCount = 2;
+    init_info.UseDynamicRendering = true;
+
+    init_info.UseDynamicRendering = true;
+
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO
+    };
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats =
+      &this->SwapchainFormat;
+
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&init_info);
+  }
+
   void*
   Pointer::Cpu() {
     const Ctx *ctx = &gCtx;
@@ -986,6 +1043,10 @@ namespace GPU {
       this->BumpAllocs[i][j].BytesPushed = 0;      
     }
   }
+
+#if GPU_USE_IMGUI
+  InitImgui();
+#endif
   
   return 0;
   }
@@ -1680,6 +1741,33 @@ namespace GPU {
   Cmd_buf::ResetTimestamps() const {
     const Ctx *ctx = &gCtx;
     vkCmdResetQueryPool(this->CommandBuffer, ctx->TimestampQueryPools[ctx->CurrentFrameIndex], 0, ctx->TimestampCapacity);
+  }
+
+  void
+  Cmd_buf::BeginRendering(const Rendering_info &info, iv2 areaTL, uv2 areaWH) const {
+    for (u32 i = 0; i < info.ColorAttachmentCount; i++) {
+      Attachment_info *a = info.PColorAttachments + i;
+      a->ImageLayout = a->Img->Layout;
+      a->ImageView = a->Img->View;
+    }
+    if (info.PDepthAttachment) {
+      Attachment_info *a = info.PDepthAttachment;
+      a->ImageLayout = a->Img->Layout;
+      a->ImageView = a->Img->View;
+    }
+    if (info.PStencilAttachment) {
+      Attachment_info *a = info.PStencilAttachment;
+      a->ImageLayout = a->Img->Layout;
+      a->ImageView = a->Img->View;
+    }
+    Rendering_info r = info;
+    r.RenderArea = { { areaTL.x, areaTL.y }, { areaWH.x, areaWH.y } };
+    vkCmdBeginRendering(this->CommandBuffer, (VkRenderingInfo*)&r);
+  }
+
+  void
+  Cmd_buf::EndRendering() const {
+    vkCmdEndRendering(this->CommandBuffer);
   }
 
   double
