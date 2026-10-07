@@ -66,8 +66,12 @@ vec2 octaencode(in vec3 v) {
 
 // returns random float [-1, 1]
 float randomFloatNorm(uint seed) {
-  return float((hash1(seed) / 4294967295.0)) * 2.0 - 1.0;
+    uint x = hash1(seed);
+    return float(x >> 8) * (1.0 / 16777216.0) * 2.0 - 1.0;
 }
+/*float randomFloatNorm(uint seed) {
+  return float((float(hash1(seed)) / 4294967295.0)) * 2.0 - 1.0;
+  } */
 
 // returns random vec3 INSIDE unit sphere
 vec3 randomUnitVec3(uint seed) {
@@ -94,6 +98,17 @@ vec3 randomHemisphereVec3(uvec3 seeds, vec3 normal) {
   return u;
 }
 
+vec3 randomCosDir(uvec2 seeds, vec3 normal) {
+  float a = randomFloatNorm(seeds[0]);
+  float b = sqrt(max(-fma(a, a, -1), 0.0));
+  float phi = PI * (randomFloatNorm(seeds[1]) + 1.0);
+  vec3 v;
+  v.x = fma(b, cos(phi), normal.x); 
+  v.y = fma(b, sin(phi), normal.y); 
+  v.z = normal.z + a;
+  return normalize(v);
+}
+
 void barycentric(vec3 p, vec3 a, vec3 b, vec3 c, out float u, out float v, out float w) {
   vec3 v0 = b - a, v1 = c - a, v2 = p - a;
   float d00 = dot(v0, v0);
@@ -105,6 +120,43 @@ void barycentric(vec3 p, vec3 a, vec3 b, vec3 c, out float u, out float v, out f
   v = (d11 * d20 - d01 * d21) / denom;
   w = (d00 * d21 - d01 * d20) / denom;
   u = 1.0f - v - w;
+}
+
+// take a unit vector v and rotate it. the rotation goes from +Z to normal
+vec3 rotFromZPos(vec3 normal, vec3 v) {
+  float d = dot(normal, vec3(0,0,1));
+  if (abs(abs(d) - 1.0) < 0.000001) return vec3(v.x, v.y * sign(d), v.z * sign(d));
+  vec3 h = normalize(normal + vec3(0,0,1));
+  vec4 q = vec4(-h.y, h.x, 0, h.z);
+
+  float mod = 2.0f * dot(q.xy, v.xy);
+  float mod2 = fma(h.z, h.z, -dot(q.xy, q.xy)); 
+  vec3 v2 = (q.xyz * mod + v * mod2);
+  return (v2 + (cross(q.xyz, v) * 2.0 * h.z));
+}
+
+vec2 randomDisk(uvec2 seeds) {
+  vec2 u = vec2(randomFloatNorm(seeds[0]), randomFloatNorm(seeds[1])) * 0.5 + 0.5;
+  float a = 2 * u[0] - 1;
+  float b = 2 * u[1] - 1;
+  float r, phi;
+  r = max(abs(a), abs(b));
+  if (a*a > b*b) {
+    phi = (PI * 0.25) * (b / a);
+  } else {
+    phi = (PI * 0.5) - (PI * 0.25) * (a / b);
+  }
+  return r * vec2(cos(phi), sin(phi));
+}
+
+vec3 randomConeDir(uvec2 seeds, vec3 normal, float cosThMax) {
+  // get random
+  vec2 u = vec2(randomFloatNorm(seeds[0]), randomFloatNorm(seeds[1])) * 0.5 + 0.5;
+  float cosTh = (1 - u[0]) + u[0] * cosThMax;
+  float sinTh = sqrt(abs(1.0 - cosTh * cosTh));
+  float ph = u[1] * 2 * PI;
+  vec3 n = vec3(cos(ph) * sinTh, sin(ph) * sinTh, cosTh);
+  return rotFromZPos(normal, n);
 }
 
 
@@ -119,4 +171,8 @@ float sqDistPointLine(vec3 P, vec3 dir, vec3 Q, out vec3 l) {
   l = projQ;
   vec3 diff = projQ - Q;
   return dot(diff, diff);
+}
+
+float degToRad(float deg) {
+  return PI * (deg * (1.0 / 180.0));
 }

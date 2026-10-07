@@ -40,11 +40,56 @@ extern App_globals gAppGlobals;
 )
 
  */
+namespace _App_input_details {
+  inline i32
+  GetAppInputIndex(u32 virtualKeyCode) {
+    return (i32)virtualKeyCode;
+  }
+  inline void
+  SetKey(u8 *k, u32 state) {
+    ASSERT(state < 2, "Invalid state bit!");
+    u32 nk = (u32)*k; // copy key
+    u32 nks = nk & 0b0011; // get state bits
+    u32 ns = (nks << 1) | 1; // if nks == 0, nks = 1; if nks == 1, nks = 3;
+    ns = MIN(ns, 0b0011); // clamp
+    u32 shf = (nks & 0b0011); // decide which bit to set.
+    u32 st = ((state << shf) & 0b0011) << (2); // shift 1 bit if S0 was already recorded, otherwise shift more bits. we mask those bits out, making the write null. then we shift it into the position of where we store key value
+    st |= ns; // update status bits
+    // wipe nk if no states are set
+    u32 nullmask = nks == 0b0011 ? 0b1100 : (nks == 0b0000 ? 0b0000 : 0b0100); // reset KS[0] if first set (nks is 0), reset KS[1] (but keep KS[0]) if second set (nks is 1). if both are set, reset nothing
+    nk &= nullmask;
+    nk |= st; // write new value/state
+    *k = (u8)nk;  
+  }
+
+  inline void
+  ResetKeyStates(u8 *k) {
+    u32 a = (u32)*k;
+    if (a & 0b0010) a >>= 1; // set KS[0] to KS[1] if KS[1] was recorded
+    a &= (~0b0011);
+    *k = (u8)a;
+  }
+}
+
 #define APP_KEY_COUNT (256)
 struct App_input {
   u8 KeyStates[APP_KEY_COUNT];
   u8 MouseStates[2];
   iv2 MousePosition;
+
+  inline void
+  Reset() volatile {
+    for (i32 i = 0; i < APP_KEY_COUNT; i++) {
+      u8 v = (u8)this->KeyStates[i];
+      _App_input_details::ResetKeyStates(&v);
+      this->KeyStates[i] = v;
+    }
+    for (u32 i = 0; i < ARRAYCOUNT(this->MouseStates); i++) {
+      u8 v = (u8)this->MouseStates[i];
+      _App_input_details::ResetKeyStates(&v);
+      this->MouseStates[i] = v;
+    }
+  }
 };
 
 struct Input_stream {
@@ -58,6 +103,7 @@ struct Input_stream {
   inline bool
   _Down(const u8 *buf, const u32 vk, bool* PRESS = NULL, bool *RELEASE = NULL) const {
     u8 v = buf[vk];
+    ASSERT((v & 3) != 2, "Failed key state invariant; ks1 was set but not ks0!");
     bool ks0 = (bool)(v & 4);
     bool ks1 = (bool)(v & 8);
     bool res[4] = { ks0, ks0, 0, ks1 };
@@ -109,34 +155,6 @@ struct Input_stream {
     return States[stateIndex].MousePosition;
   }
 };
-
-namespace _App_input_details {
-  i32 GetAppInputIndex(u32 virtualKeyCode) {
-    return (i32)virtualKeyCode;
-  }
-  void SetKey(u8 *k, u32 state) {
-    ASSERT(state < 2, "Invalid state bit!");
-    u32 nk = (u32)*k; // copy key
-    u32 nks = nk & 3; // get state bits
-    u32 ns = (nks << 1) | 1; // if nks == 0, nks = 1; if nks == 1, nks = 3;
-    ns = MIN(ns, 3); // clamp
-    u32 shf = (nks & 3); // decide which bit to set.
-    u32 st = ((state << shf) & 3) << (2); // shift 1 bit if S0 was already recorded, otherwise shift more bits. we mask those bits out, making the write null. then we shift it into the position of where we store key value
-    st |= ns; // update status bits
-    // wipe nk if no states are set
-    u32 nullmask = nks == 0 ? 0 : 4; // reset KS[0] if first set (nks is 0), reset KS[1] if second set (nks is 1)
-    nk &= nullmask;
-    nk |= st; // write new value/state
-    *k = (u8)nk;  
-  }
-
-  void ResetKeyStates(u8 *k) {
-    u32 a = (u32)*k;
-    if (a & 2) a >>= 1; // set KS[0] to KS[1] if KS[1] was recorded
-    a &= (~3);
-    *k = (u8)a;
-  }
-}
 
 extern volatile App_input gAppInput;
 

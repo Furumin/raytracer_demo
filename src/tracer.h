@@ -60,10 +60,7 @@ namespace Tracer {
     GPU::KernelHandle mShaderKernel;       // tracer_shade.comp
     GPU::KernelHandle mScreenWriteKernel;  // tracer_sw.comp
     
-    // (todo) remove
-    GPU::Pointer mSphereBuffer;
-    
-    // (todo) double-buffer this!
+    // (todo) double-buffer this if CPU is able to modify
     Object_buffers mObjectBuffers;
     
     Ray_trace_buffers mRayBuffers;
@@ -71,16 +68,15 @@ namespace Tracer {
     quat mCameraQuat = {0, 0, 0, 1};
     Camera mCamera;
 
-    tinybvh::BVH_GPU mTLAS = {};
-    /*
-      BLASInstance takes an index in its constructor; this index is into a BVHBase*[] (polymorphic, contains all sorts of different BVH). 
-    */
-    tinybvh::BLASInstance mInstances[2] = {};
-    tinybvh::BVH_GPU mBVHs[2] = {};
     u64 mTickCount = 0;
     u32 mProgramSignals = 0; // reset every frame
     u32 mPermanentProgramSignals = 0; // never reset
     u32 mSphereCount;
+
+    v4 mSkyColor;
+    v4 mSunData;
+    u32 mSunObjectIndex;
+    u32 mSunMaterialIndex;
 
     // timestamps
     u64 mStartTime = 0, mEndTime = 0;
@@ -91,9 +87,9 @@ namespace Tracer {
     // reset this when objects/camera change!
     float mAccumSamplesCount = 0;
 
-    u32 mFrameBufferInvRelSizePow2 = 1;
-    u32 mRaysPerPixelPow2 = 2;
-    u32 mMaxDepth = 15;
+    u32 mFrameBufferInvRelSizePow2 = 0;
+    u32 mRaysPerPixelPow2 = 0;
+    u32 mMaxDepth = 31;
 
     u32 mRayFrameCounter = 0;
     

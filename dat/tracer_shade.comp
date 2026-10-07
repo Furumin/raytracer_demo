@@ -20,12 +20,12 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
   vec3 clr = data.SkyColor.xyz;
   Ray ray = loadRayByIdx(rayBuffer, localRayIdx, true, false);
   // skip rays that stopped at previous frames
-  int rayDepth = int(ray.Data >> 27);
-  int passDepth = int(data.Depth);
+  int rayDepth = int(ray.Data >> TRACER_DEPTH_O);
+  int passDepth = int(data.DepthAndFlags >> 16);
   if (abs(passDepth - rayDepth) > 1) return;
-  uint materialIndex = ray.Data & TRACER_MATERIAL_INDEX_MASK;
-  if (materialIndex != TRACER_MATERIAL_INDEX_MASK) {
-    //if (data.Depth != 0) clr = vec3(1.0);
+  uint materialIndex = (ray.Data & TRACER_MATERIAL_INDEX_MASK) >> 2;
+  const bool regularization = false && (ray.Data & TRACER_RAY_HIT_DIFFUSE_FLAG) != 0;
+  if (materialIndex != TRACER_INVALID_MATERIAL) {
     Material m = loadMaterialByIdx(materialBuffer, materialIndex);
     clr = m.Color;
     uint signBit = floatBitsToUint(hit.Normal.y) & 1;
@@ -34,7 +34,8 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
     dirZ *= (signBit == 1 ? 1.0 : -1.0);
     vec3 norm = vec3(hit.Normal, dirZ);
     bool frontFace = dot(norm, ray.Direction) < 0.0; // positive if front facing
-    uvec3 hash = data.Hash.xyz + hash1(rayIdx);
+    // hashes 
+    uvec3 hash = data.Hash.xwz + hash1(rayIdx);
     
     // scatter ray based on material
     // refraction
@@ -43,7 +44,7 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
       norm = frontFace ? norm : -norm;
       vec3 unitDir = normalize(ray.Direction);
       float cosT = min(dot(-unitDir, norm), 1.0);
-      float sinT = sqrt(1.0 - cosT * cosT);
+      float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
 
       bool cannotRefl = ri * sinT > 1.0;
       float reflectance;
@@ -51,17 +52,60 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
       r0 *= r0;
       reflectance = r0 + (1.0 - r0) * pow(1.0 - cosT, 5.0);
       ray.Direction = cannotRefl || reflectance > abs(randomFloatNorm(hash.x)) ? reflect(unitDir, norm) : refract(unitDir, norm, ri);
+      // ray path regularization
+      if (regularization) {
+	ray.Direction = normalize(randomConeDir(hash.zx, ray.Direction, 0.92));
+      }
     } else if ((m.Flags & TRACER_MATERIAL_FLAG_METALLIC) != 0) {
       ray.Direction = reflect(ray.Direction, norm);
+      // ray path regularization
+      const float effRoughness = (regularization ? max(0.1, m.Roughness) : m.Roughness); 
+      ray.Direction = normalize(ray.Direction + randomUnitVec3(hash.xzy) * effRoughness);
     } else {
-      ray.Direction = (norm + randomHemisphereVec3(hash, norm) * m.Roughness);
+      // non-specular
+      ray.Data |= TRACER_RAY_HIT_DIFFUSE_FLAG;
+      // (todo) GGX model using roughness parameter in material
+      // (todo) support for more than one light source
+
+      // generate random dir. on hemisphere (assuming lambertian material
+      const vec3 matDir = randomCosDir(hash.yz, norm);
+      vec3 v = matDir;
+      
+      // if no pdf is disabled => if pdf is enabled
+      if ((data.DepthAndFlags & TRACER_RS_NO_PDF_BIT) == 0) {
+	const vec3 lightPos = data.SunData.xyz;
+	vec3 lightDir = lightPos - hit.HitPosition;
+	const float lightRad = data.SunData.w;
+	const float distSq = dot(lightDir, lightDir);
+	lightDir = normalize(lightDir);
+
+	const float cosThMax = sqrt(max(1.0 - lightRad * lightRad / distSq, 0.0));
+	// (todo) more sophisticated next event estimation via shadow rays?
+	const float rand = randomFloatNorm(hash1(hash.x) + rayIdx) * 0.5 + 0.5;
+	float sunWeight = 0.5 * max(0.0, dot(norm, lightDir));
+	vec3 sunDir = randomConeDir(hash.zx, lightDir, cosThMax);
+	v = rand >= sunWeight ? matDir : sunDir;
+	// PI not included as they cancel out 
+	const float lightPdf = dot(lightDir, v) >= cosThMax ? (1.0 / (2.0 * (1.0 - cosThMax))) : 0;
+	const float matPdf = max(dot(norm, v), 0.0);
+	const float mixPdf = (1.0 - sunWeight) * matPdf + (sunWeight) * lightPdf;
+	// dot norm v is the cos th in the rendering eq. 
+	clr *= max(dot(norm, v), 0.0) / mixPdf;
+      }
+      ray.Direction = v;
     }
     if ((m.Flags & TRACER_MATERIAL_FLAG_EMISSIVE) != 0) {
-      ray.Data &= ~(31 << 27); // stop tracing ray, by settings depth to 0
+      ray.Data &= ~(TRACER_MAX_DEPTH << TRACER_DEPTH_O); // stop tracing ray, by setting depth to 0
+      ray.Data |= TRACER_RAY_HIT_EMISSIVE_BIT; // set bit, indicating that the ray hit a light
     }
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
   }
   ray.Color.xyz *= clr;
+  
+  // if on the last bounce, remove all color IF the ray never hit any light
+  if ((data.DepthAndFlags & TRACER_RS_LAST_BOUNCE_BIT) > 0)
+    ray.Color.xyz *= float(ray.Data & TRACER_RAY_HIT_EMISSIVE_BIT);
+  
   ray.Color.xyz = clamp(ray.Color.xyz, vec3(0.0), vec3(10000.0));
   storeRayByIdx(rayBuffer, localRayIdx, ray, true, true);
 }

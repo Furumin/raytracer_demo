@@ -2,7 +2,9 @@
 #if _MSC_VER
 #include <cmath>
 #endif
+
 #define PI32 3.1415926535
+#define FLOAT_EPS 0.000001f
 
 // builtin math
 namespace bm {
@@ -201,6 +203,12 @@ RadFromDeg(const float deg) {
   return PI32 * (deg * invHalf);
 }
 
+float
+DegFromRad(const float rad) {
+  const float invPI = 1.0f / PI32;
+  return 180.0f * (rad * invPI);
+}
+
 struct quat {
   union {
     struct {
@@ -262,13 +270,12 @@ inline quat
 quatangleaxis(const float angle, const v3 axis) {
   v3 n = norm(axis);
   float s = bm::sinf(angle * 0.5f);
-
-  return {
-    .x = n.x * s,
-    .y = n.y * s,
-    .z = n.z * s,
-    .w = bm::cosf(angle * 0.5f)
-  };
+  quat q;
+  q.x = n.x * s;
+  q.y = n.y * s;
+  q.z = n.z * s;
+  q.w = bm::cosf(angle * 0.5f);
+  return q;
 }
 
 inline v3

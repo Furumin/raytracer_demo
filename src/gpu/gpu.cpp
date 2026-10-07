@@ -738,8 +738,6 @@ namespace GPU {
     return -1;
   }
 
-  // (todo) get memory info
-  
   // Create global pipeline layout
   VkDescriptorSetLayout dsLayouts[DESC_SET_COUNT];
   VkDescriptorBindingFlagsEXT descBindingFlags =
@@ -1052,11 +1050,18 @@ namespace GPU {
   }
   // Init end
 
-  
+
+  /*
+    Note that we do not free most resources allocated in the Ctx.
+    Permanent resources are cleaned up by the OS on application shutdown,
+    so there is no real need for us to manually clean them up.
+    Of course, for transient resources (images, pipelines) that the user wants to mark
+    as unused, we need to destroy those resources at RUNTIME, but there is no need
+    to free/destroy anything at SHUTDOWN time.
+   */
   void
   Ctx::Free() {
     this->ScratchArena.Free();
-    // Not actually needed, but freeing just in case
     for (u32 i = 0; i < MAX_GPU_QUEUE_TYPE_COUNT; i++) {
       Util::Stack<VkCommandBuffer> *cmdBufStack = &this->CommandBufferStacks[i];
       Util::Platform_memory_alloc allocator;
@@ -1065,14 +1070,12 @@ namespace GPU {
     this->ScratchArena.Free();
     {
       Util::Stdlib_memory_alloc alloc;
-      // (todo) iterate over all images and free
       this->ImagePool.Free(&alloc);
       this->KernelPool.Free(&alloc);
       for (u32 i = 0; i < ARRAYCOUNT(this->DescriptorArrays); i++) {
 	this->DescriptorArrays[i].Free(&alloc);
       }
     }
-    
   }
 
   uv2
@@ -1483,7 +1486,7 @@ namespace GPU {
     VkResult res = vkCreateImage(ctx->Device, (VkImageCreateInfo*)&createInfo, 0, &img.Image);
     ASSERT(res == VK_SUCCESS, "Could not create an image!");
 
-    // (todo) dont limit to first imagemasters
+    // (todo) Allow several image memory pools
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(ctx->Device, img.Image, &memRequirements);
     const u32 totReqSize = memRequirements.size + memRequirements.alignment;
@@ -1539,7 +1542,7 @@ namespace GPU {
 	.pImageInfo = &imgInfo[i]
       };
       if (descCreateCond[i]) {
-	// (TODO) HANDLE DESCRIPTOR INDEX ALLOC FAILURE
+	// (todo) Handle descriptor index alloc failure
 	Util::Handle<Util::Any> h = ctx->DescriptorArrays[i].Add();
 	img.DescriptorHandles[i] = h;
 	writeInfo.dstArrayElement = h.Index;

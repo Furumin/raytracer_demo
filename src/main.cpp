@@ -221,16 +221,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* pCmdLineA, int nCmdS
     }
     if (gInputLatched) {
       // reset all key/mouse states
-      for (i32 i = 0; i < APP_KEY_COUNT; i++) {
-	u8 v = (u8)gAppInput.KeyStates[i];
-	_App_input_details::ResetKeyStates(&v);
-	gAppInput.KeyStates[i] = v;
-      }
-      for (u32 i = 0; i < ARRAYCOUNT(gAppInput.MouseStates); i++) {
-	u8 v = (u8)gAppInput.MouseStates[i];
-	_App_input_details::ResetKeyStates(&v);
-	gAppInput.MouseStates[i] = v;
-      }
+      gAppInput.Reset();
       gInputLatched = false;
     }
     Sleep(0);

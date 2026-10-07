@@ -4,6 +4,7 @@ namespace Tracer {
 #define f16 u16 // do not access from cpu !!
 #define f16v4 uv2
 #else
+#define u16 uint16_t
 #define f16 float16_t
 #define f16v4 f16vec4
 #define u32 uint
@@ -20,6 +21,45 @@ namespace Tracer {
 #define TRACER_RAY_HIT_UNIFIED (1)
 #define TRACER_PERSISTENT_THREADS (0)
 #define TRACER_USE_F16_COLOR (1)
+#define TRACER_MAX_CAMERA_VFOV (89.0f)
+
+  // program signals (abbrev. PS)
+#define TRACER_PS_NO_ACCUM_BIT (2)
+#define TRACER_PS_NO_AA_BIT (4)
+#define TRACER_PS_SKIP_EXEC_BIT (8)
+#define TRACER_PS_NO_SS_BIT (16) // stratified sampling
+#define TRACER_PS_PR_BIT (32) // path regularization, curr. unused
+#define TRACER_PS_NO_PDF_BIT (64)
+#define TRACER_PS_EXT_RESIZED_BIT (128)
+  
+#define TRACER_RT_WORKGROUP_SIZE (128)
+#define TRACER_RT_COARSE_FACTOR (2)
+#define TRACER_RS_WORKGROUP_SIZE (128)
+#define TRACER_RS_COARSE_FACTOR (1)
+
+#define RT_PCD_RAY_BUF (0)
+#define RT_PCD_TLAS_BUF (1)
+#define RT_PCD_OBJ_BUF (2)
+#define RT_PCD_HIT_BUF (3)
+#define RT_PCD_CNT_BUF (4)
+
+#define TRACER_OBJ_INDEX_BIT_COUNT (27)
+#define TRACER_OBJ_TYPE_BIT_COUNT (4)
+
+#define TRACER_RAY_CHUNK_SIZE_POW2 (5)
+#define TRACER_RAY_CHUNK_SIZE (1 << TRACER_RAY_CHUNK_SIZE_POW2)
+#define TRACER_MATERIAL_CHUNK_SIZE_POW2 (5)
+#define TRACER_MATERIAL_CHUNK_SIZE (1 << TRACER_MATERIAL_CHUNK_SIZE_POW2)
+#define TRACER_MATERIAL_W (25)
+#define TRACER_MATERIAL_O (2)
+#define TRACER_MATERIAL_INDEX_MASK (0x03ffffff)
+#define TRACER_DEPTH_W (5)
+#define TRACER_DEPTH_O (27)
+#define TRACER_MAX_DEPTH ((1 << TRACER_DEPTH_W) - 1)
+#define TRACER_RAY_HIT_DIFFUSE_FLAG (1)
+#define TRACER_RAY_HIT_EMISSIVE_BIT (2)
+#define TRACER_INVALID_MATERIAL (TRACER_MATERIAL_INDEX_MASK >> 2)
+  
   struct Camera {
     v3 Position; // user
     float AspectRatio; // cached, used at runtime
@@ -31,7 +71,7 @@ namespace Tracer {
     u32 PixelHeight; // user
 
     v3 Right;
-    u32 _PADDING0[1];
+    float DefocusAngle;
     
     v3 DeltaU; // cached, used at runtime to find world-space points that correspond to each image pixel
     float VFov; // user
@@ -43,29 +83,23 @@ namespace Tracer {
     float FocusDistance; // user
   };
 
-#define TRACER_OBJ_INDEX_BIT_COUNT (27)
-#define TRACER_OBJ_TYPE_BIT_COUNT (4)
   struct Object {
     float Transform[12]; // mat3x4, implicitly a mat4. row-major (!)
     u32 Type;  // Sphere, mesh, etc
-    u32 Index; // MSB is not used, next 4 bits are type, remaining 27 are index into [type]buffer that contains data
+    u32 Index; // MSB is not used, next 4 bits are type, remaining 27 are index into [type]buffer that contains data. type is not currently used.
     u32 MaterialIndex; // Index into material buffer
     u32 Padding[1]; // If Sphere, radius is stored in Transform
   };
 
   struct Ray {
     v3 Position;
-    u32 Data; // bottom 5 bits represent depth, rest is material index
+    // bottom 5 bits represent depth, bits [26:2] are material index, bit 1 is hit light flag, bit 0 is hit non-specular flag
+    u32 Data; 
     v3 Direction; // not necessarily normalized
     float T;
     v3 Color;
   };
 
-#define TRACER_RAY_CHUNK_SIZE_POW2 (5)
-#define TRACER_RAY_CHUNK_SIZE (1 << TRACER_RAY_CHUNK_SIZE_POW2)
-#define TRACER_MATERIAL_CHUNK_SIZE_POW2 (5)
-#define TRACER_MATERIAL_CHUNK_SIZE (1 << TRACER_MATERIAL_CHUNK_SIZE_POW2)
-#define TRACER_MATERIAL_INDEX_MASK (0x07ffffff)
   struct Hit_record_chunk_base {
     float PosX   [TRACER_RAY_CHUNK_SIZE];
     float PosY   [TRACER_RAY_CHUNK_SIZE];
@@ -150,7 +184,7 @@ namespace Tracer {
 
   struct Hit_record {
     v3 HitPosition;
-    u32 Data; // Material index, 0xffffffff means invalid hit record
+    //    u32 Data; // Material index, 0xffffffff means invalid hit record
     //    v2 UV;
     v2 Normal;
   };
@@ -166,9 +200,6 @@ namespace Tracer {
     v4 rmax;// .w is firstTri; // total: 64 bytes
   };
 
-  // program signals (abbrev. PS)
-#define TRACER_PS_NO_ACCUM_BIT (2)
-  
   struct Ray_intersect_pcd {
     u64 CameraPointer;
     u32 Hash;
@@ -181,15 +212,6 @@ namespace Tracer {
     u32 _Padding2[1];
   };
 
-#define TRACER_RT_WORKGROUP_SIZE (64)
-#define TRACER_RT_COARSE_FACTOR (2)
-#define TRACER_RS_WORKGROUP_SIZE (128)
-#define TRACER_RS_COARSE_FACTOR (1)
-#define RT_PCD_RAY_BUF (0)
-#define RT_PCD_TLAS_BUF (1)
-#define RT_PCD_OBJ_BUF (2)
-#define RT_PCD_HIT_BUF (3)
-#define RT_PCD_CNT_BUF (4)
   struct Rt_pcd {
     uv4 Hash;
     
@@ -205,10 +227,13 @@ namespace Tracer {
     u64 _PADDING1[1];
     
     u32 Depth; // If MSB is asserted, populate ray buffers
-    float PinholeRadius;
-    u32 _PADDING2[2];
+    u32 EnableAntiAliasing;
+    u32 EnableStratifiedSampling;
+    u32 _PADDING2[1];
   };
 
+#define TRACER_RS_LAST_BOUNCE_BIT (1)
+#define TRACER_RS_NO_PDF_BIT (2)
   // shading
   struct Rs_pcd {
     uv4 Hash;
@@ -218,7 +243,7 @@ namespace Tracer {
     u32 RayIdxOffset;
 
     float Hyst; // unused
-    u32 Depth;
+    u32 DepthAndFlags; // high 16 are depth, LSB is 1 if last bounce, bit [1] is 1 if importance sampling is ON
     u32 RayCount;
     u32 RaysPerPixelPow2;
 
@@ -229,6 +254,8 @@ namespace Tracer {
     u64 GlobalCountBuffer;
 
     v4 SkyColor;
+
+    v4 SunData; // hard-coded emissive
   };
 
   struct Sw_pcd {
@@ -250,6 +277,7 @@ namespace Tracer {
 #if APP_CPP_CODE
 }
 #else
+#undef uint16_t
 #undef u32
 #undef u64
 #undef uv2

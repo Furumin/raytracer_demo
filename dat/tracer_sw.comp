@@ -27,6 +27,7 @@ void main() {
   }
   vec3 accumClr = accum / raysPerPixel;
   vec3 currentAccumClr = (imageLoad(_IMG, imagePos)).xyz;
+
   currentAccumClr += (accumClr - currentAccumClr) / (data.AccumCount + 1.0);
   imageStore(_IMG, imagePos, vec4(currentAccumClr, 1.0));
 

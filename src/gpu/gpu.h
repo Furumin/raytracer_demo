@@ -186,7 +186,7 @@ namespace GPU {
       return {(u32)this->Width, (u32)this->Height};
     }
   };
-  // (todo) increase to 40
+
   static_assert(sizeof (Image) == 40, "Unexpected size of GPU::Image");
 
   // Unused value in specs
@@ -486,10 +486,14 @@ namespace GPU {
   GetImage(const ImageHandle handle);
   void
   ResizeImage(const ImageHandle handle, const uv3 newSize);
+  
+  // (todo) destroy image
 
   // compute shader, called "kernel"
   KernelHandle
   CreateKernel(const void *pBinary, const u64 binarySize, const char *entryPoint);
+
+  // (todo) destroy kernel
 
   Bump_alloc*
   GetBumpAlloc(Buffer_type type);
