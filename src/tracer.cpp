@@ -349,7 +349,10 @@ namespace Tracer {
     ImGui::NewFrame();
     const uv2 swapchainDim = GPU::GetSwapchainDim();
     const uv2 fbDim = GPU::GetImage(mBaseAttachment)->GetDim();
+    const float maximumWindowHeight = swapchainDim.y * 0.45f;
+    ImGui::SetNextWindowPos(ImVec2());
     ImGui::Begin("Editor");
+    ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), maximumWindowHeight));
     if (ImGui::CollapsingHeader("Controls")) {
       ImGui::Text("WASD: Move");
       ImGui::Text("SHIFT/SPACE: Move vertically");

@@ -212,6 +212,28 @@ Material loadMaterialByIdx(in MaterialChunkBuffer buf, in uint matIdx) {
   return m;
 }
 
+bool sphereHit(in vec3 rayPos, in vec3 rayDir, in vec3 sPos, in float sRad, in float rayTMax, out float tMin) {
+  vec3 oc = sPos - rayPos;
+  float a = dot(rayDir, rayDir);
+  float h = dot(rayDir, oc);
+  float c = -fma(sRad, sRad, -dot(oc, oc)); //dot(oc, oc) - s.Radius * s.Radius; 
+  float disc = fma(h, h, -a * c); //h * h - a * c;
+  bool ht = disc >= 0;
+
+  const float recipA = 1.0 / a;
+  float sqf = sqrt(disc);
+  float r = (h - sqf) * recipA;
+  if (!(r >= 0.0f && r <= rayTMax)) {
+    r = (h + sqf) * recipA;
+    ht = ht && ((r >= 0.0f && r <= rayTMax));
+  }
+
+  // hit
+  if (ht)
+    tMin = r;
+  return ht;
+}
+
 bool sphereHit(in Ray ray, in Sphere s, out float tMin) {
   vec3 oc = s.Position - ray.Position;
   float a = dot(ray.Direction, ray.Direction);
@@ -340,4 +362,55 @@ bool hitAny(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, bool disqua
     }
   }
   return hit < ray.T;
+}
+
+bool hitAny(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in vec3 rayPos, in vec3 rayDir, in float rayTMax, bool disqualifyAlpha) {
+  const vec3 rD = 1.0 / rayDir;
+  const vec3 rO = rayPos * -rD;
+  float hit = rayTMax;
+  uint nodeIdx = 0;
+  uint stack[24];
+  const uint stackBase = 0;
+  uint stackPtr = stackBase;
+  while (true) {
+    if ((nodeIdx & 0x80000000) != 0) {
+      // found hit! this BVH only contains spheres, so no need to check type
+      uint thisObjId = nodeIdx & 0xffffff;
+      Sphere s;
+      s.Position = vec3(objBuffer.Data[thisObjId].Transform[3], objBuffer.Data[thisObjId].Transform[7], objBuffer.Data[thisObjId].Transform[11]);
+      s.Radius = objBuffer.Data[thisObjId].Transform[0];
+      float t;
+      bool h = sphereHit(rayPos, rayDir, s.Position, s.Radius, rayTMax, t);
+      // (todo) use disqualifyAlpha!
+      if (h && t < rayTMax && (true)) {
+	return true;
+      }
+      if (stackPtr == stackBase) break;
+      nodeIdx = stack[--stackPtr];
+      continue;
+    } else {
+      const vec4 lmin = bvhBuffer.Data[nodeIdx].lmin, lmax = bvhBuffer.Data[nodeIdx].lmax;
+      const vec4 rmin = bvhBuffer.Data[nodeIdx].rmin, rmax = bvhBuffer.Data[nodeIdx].rmax;
+      const vec3 t1a = fma( lmin.xyz, rD, rO ), t2a = fma( lmax.xyz, rD, rO );
+      const vec3 t1b = fma( rmin.xyz, rD, rO ), t2b = fma( rmax.xyz, rD, rO );
+      const vec3 minta = min( t1a, t2a ), maxta = max( t1a, t2a );
+      const vec3 mintb = min( t1b, t2b ), maxtb = max( t1b, t2b );
+      const float tmina = max( max( max( minta.x, minta.y ), minta.z ), 0 );
+      const float tminb = max( max( max( mintb.x, mintb.y ), mintb.z ), 0 );
+      const float tmaxa = min( min( min( maxta.x, maxta.y ), maxta.z ), hit );
+      const float tmaxb = min( min( min( maxtb.x, maxtb.y ), maxtb.z ), hit );
+      const bool hitA = tmina <= tmaxa, hitB = tminb <= tmaxb;
+      uint left = floatBitsToUint( lmin.w ), right = floatBitsToUint( lmax.w );
+      if (hitA && hitB) {
+	// add furthest hit first, nearest hit at top of stack
+	  uint near = left, far = right;
+	  if (tminb < tmina) near = right, far = left;
+	  stack[stackPtr++] = far, nodeIdx = near;
+	}
+      else if (hitA) nodeIdx = left;
+      else if (hitB) nodeIdx = right;
+      else { if (stackPtr == stackBase) break; nodeIdx = stack[--stackPtr]; }
+    }
+  }
+  return hit < rayTMax;
 }
