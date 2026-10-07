@@ -18,8 +18,6 @@ namespace Tracer {
   
 #endif
 
-#define TRACER_RAY_HIT_UNIFIED (1)
-#define TRACER_PERSISTENT_THREADS (0)
 #define TRACER_USE_F16_COLOR (1)
 #define TRACER_MAX_CAMERA_VFOV (89.0f)
 
@@ -32,10 +30,10 @@ namespace Tracer {
 #define TRACER_PS_NO_PDF_BIT (64)
 #define TRACER_PS_EXT_RESIZED_BIT (128)
   
-#define TRACER_RT_WORKGROUP_SIZE (128)
+#define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
-#define TRACER_RS_WORKGROUP_SIZE (128)
-#define TRACER_RS_COARSE_FACTOR (1)
+#define TRACER_RS_WORKGROUP_SIZE (64)
+#define TRACER_RS_COARSE_FACTOR (2)
 
 #define RT_PCD_RAY_BUF (0)
 #define RT_PCD_TLAS_BUF (1)
@@ -97,7 +95,7 @@ namespace Tracer {
     u32 Data; 
     v3 Direction; // not necessarily normalized
     float T;
-    v3 Color;
+    //    v3 Color;
   };
 
   struct Hit_record_chunk_base {
@@ -110,20 +108,13 @@ namespace Tracer {
     float NormalY[TRACER_RAY_CHUNK_SIZE];
   };
 
-  struct Hit_record_chunk {
-    Hit_record_chunk_base Hit;
-  };
-
   struct Ray_chunk {
     u32 Data    [TRACER_RAY_CHUNK_SIZE]; // 5 MSB is depth, rest is material index
     float DirX  [TRACER_RAY_CHUNK_SIZE];
     float DirY  [TRACER_RAY_CHUNK_SIZE];
     float DirZ  [TRACER_RAY_CHUNK_SIZE];
-    //    float T     [TRACER_RAY_CHUNK_SIZE];
 
-#if TRACER_RAY_HIT_UNIFIED
     Hit_record_chunk_base Hit;
-#endif
 
     float PosX  [TRACER_RAY_CHUNK_SIZE];
     float PosY  [TRACER_RAY_CHUNK_SIZE];

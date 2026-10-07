@@ -14,18 +14,11 @@ layout(std430, buffer_reference, buffer_reference_align = 16) buffer RayBuffer {
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer RayChunkBuffer {
   Ray_chunk Data[];
 };
-#if TRACER_RAY_HIT_UNIFIED
-#define HitChunkBuffer RayChunkBuffer
-#else
-layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitChunkBuffer {
-  Hit_record_chunk Data[];
-};
-#endif
-#if TRACER_PERSISTENT_THREADS
-layout(std430, buffer_reference, buffer_reference_align = 16) coherent buffer GlobalCountBuffer {
-  uint Count;
-};
-#endif
+//layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitChunkBuffer {
+//  Hit_record_chunk Data[];
+//};
+//#define HitChunkBuffer RayChunkBuffer
+
 layout(std430, buffer_reference, buffer_reference_align = 16) buffer HitBuffer {
   Hit_record Data[];
 };
@@ -113,9 +106,9 @@ void getMaterialChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk)
 #define _LOAD_COLOR(a) (a)
 #endif
 
-#define _RAY_BUF_ACCESS(prop) buf.Data[chunkIdx]. prop [idxInChunk]
+#define _RAY_BUF_ACCESS(prop) buf. Data [chunkIdx]. prop [idxInChunk]
 
-Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loadPos) {
+Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadPos) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   Ray r;
@@ -129,11 +122,11 @@ Ray loadRayByIdx(in RayChunkBuffer buf, in uint rayIdx, bool loadColor, bool loa
   r.Direction.y = _RAY_BUF_ACCESS(DirY);
   r.Direction.z = _RAY_BUF_ACCESS(DirZ);
 
-  if (loadColor) {
+  /*  if (loadColor) {
     r.Color.x = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorX));
     r.Color.y = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorY));
     r.Color.z = _LOAD_COLOR(_RAY_BUF_ACCESS(ColorZ));
-  }
+    }*/
   
   return r;
 }
@@ -148,7 +141,16 @@ vec3 loadRayClrByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   return v;
 }
 
-void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storeColor, bool storePos) {
+void storeRayClrByIdx(in RayChunkBuffer buf, in uint rayIdx, in vec3 clr) {
+  uint chunkIdx, idxInChunk;
+  getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
+
+  _RAY_BUF_ACCESS(ColorX) = _STORE_COLOR(clr.x);
+  _RAY_BUF_ACCESS(ColorY) = _STORE_COLOR(clr.y);
+  _RAY_BUF_ACCESS(ColorZ) = _STORE_COLOR(clr.z);
+}
+
+void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storePos) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   if (storePos) {
@@ -161,14 +163,14 @@ void storeRayByIdx(in RayChunkBuffer buf, in uint rayIdx, in Ray r, bool storeCo
   _RAY_BUF_ACCESS(DirX) = r.Direction.x;
   _RAY_BUF_ACCESS(DirY) = r.Direction.y;
   _RAY_BUF_ACCESS(DirZ) = r.Direction.z;
-  if (storeColor) {
+  /*  if (storeColor) {
     _RAY_BUF_ACCESS(ColorX) = _STORE_COLOR(r.Color.x);
     _RAY_BUF_ACCESS(ColorY) = _STORE_COLOR(r.Color.y);
     _RAY_BUF_ACCESS(ColorZ) = _STORE_COLOR(r.Color.z);
-  }
+    }*/
 }
 
-Hit_record loadHitByIdx(in HitChunkBuffer buf, in uint rayIdx) {
+Hit_record loadHitByIdx(in RayChunkBuffer buf, in uint rayIdx) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
   Hit_record r;
@@ -184,7 +186,7 @@ Hit_record loadHitByIdx(in HitChunkBuffer buf, in uint rayIdx) {
 
   return r;
 }
-void storeHitByIdx(in HitChunkBuffer buf, in uint rayIdx, in Hit_record r) {
+void storeHitByIdx(in RayChunkBuffer buf, in uint rayIdx, in Hit_record r) {
   uint chunkIdx, idxInChunk;
   getRayChunkIdx(rayIdx, chunkIdx, idxInChunk);
 

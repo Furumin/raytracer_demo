@@ -92,7 +92,7 @@ namespace Tracer {
     u32 mMaxDepth = 31;
 
     u32 mRayFrameCounter = 0;
-    
+
     GPU::KernelHandle
     LoadKernel(const char *path);
     void

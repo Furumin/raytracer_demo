@@ -6,36 +6,31 @@ layout(std430, push_constant) uniform Push_T {
 } Push;
 layout(local_size_x = TRACER_RS_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 void kernel(in uint rayIdx, in uint localRayIdx) {
-  Rs_pcd data = Push.Data;
+  const Rs_pcd data = Push.Data;
   if (localRayIdx >= data.RayCount) return;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
-#if TRACER_RAY_HIT_UNIFIED
   Hit_record hit = loadHitByIdx(rayBuffer, localRayIdx);
-#else
-  HitChunkBuffer hitBuffer = HitChunkBuffer(data.HitBuffer);
-  Hit_record hit = loadHitByIdx(hitBuffer, localRayIdx);
-#endif
   MaterialChunkBuffer materialBuffer = MaterialChunkBuffer(data.MaterialBuffer);
-  
   vec3 clr = data.SkyColor.xyz;
-  Ray ray = loadRayByIdx(rayBuffer, localRayIdx, true, false);
+  Ray ray = loadRayByIdx(rayBuffer, localRayIdx, false);
+  vec3 rayColor = loadRayClrByIdx(rayBuffer, localRayIdx);
   // skip rays that stopped at previous frames
-  int rayDepth = int(ray.Data >> TRACER_DEPTH_O);
-  int passDepth = int(data.DepthAndFlags >> 16);
+  const int rayDepth = int(ray.Data >> TRACER_DEPTH_O);
+  const int passDepth = int(data.DepthAndFlags >> 16);
   if (abs(passDepth - rayDepth) > 1) return;
-  uint materialIndex = (ray.Data & TRACER_MATERIAL_INDEX_MASK) >> 2;
+  const uint materialIndex = (ray.Data & TRACER_MATERIAL_INDEX_MASK) >> 2;
+  // (todo) ray path regularization doesn't completely work, so we leave it off for now
   const bool regularization = false && (ray.Data & TRACER_RAY_HIT_DIFFUSE_FLAG) != 0;
   if (materialIndex != TRACER_INVALID_MATERIAL) {
-    Material m = loadMaterialByIdx(materialBuffer, materialIndex);
+    const Material m = loadMaterialByIdx(materialBuffer, materialIndex);
     clr = m.Color;
-    uint signBit = floatBitsToUint(hit.Normal.y) & 1;
-    // use absolute value in case len(hit.Normal) > 1 (due to fp precision error)
-    float dirZ = sqrt(abs(1.0 - dot(hit.Normal, hit.Normal)));
+    const uint signBit = floatBitsToUint(hit.Normal.y) & 1;
+    float dirZ = sqrt(max(0.0, 1.0 - dot(hit.Normal, hit.Normal)));
     dirZ *= (signBit == 1 ? 1.0 : -1.0);
     vec3 norm = vec3(hit.Normal, dirZ);
-    bool frontFace = dot(norm, ray.Direction) < 0.0; // positive if front facing
+    const bool frontFace = dot(norm, ray.Direction) < 0.0;
     // hashes 
-    uvec3 hash = data.Hash.xwz + hash1(rayIdx);
+    const uvec3 hash = data.Hash.xwz + hash1(rayIdx);
     
     // scatter ray based on material
     // refraction
@@ -100,23 +95,18 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
     }
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
   }
-  ray.Color.xyz *= clr;
+  rayColor *= clr;
   
   // if on the last bounce, remove all color IF the ray never hit any light
   if ((data.DepthAndFlags & TRACER_RS_LAST_BOUNCE_BIT) > 0)
-    ray.Color.xyz *= float(ray.Data & TRACER_RAY_HIT_EMISSIVE_BIT);
+    rayColor *= float(ray.Data & TRACER_RAY_HIT_EMISSIVE_BIT);
   
-  ray.Color.xyz = clamp(ray.Color.xyz, vec3(0.0), vec3(10000.0));
-  storeRayByIdx(rayBuffer, localRayIdx, ray, true, true);
+  rayColor = clamp(rayColor, vec3(0.0), vec3(10000.0));
+  storeRayByIdx(rayBuffer, localRayIdx, ray, true);
+  storeRayClrByIdx(rayBuffer, localRayIdx, rayColor);
 }
 
 void main() {
-#if TRACER_PERSISTENT_THREADS
-  if (gl_GlobalInvocationID.x == 0) {
-    GlobalCountBuffer gcb = GlobalCountBuffer(Push.Data.GlobalCountBuffer);
-    gcb.Count = 0;
-  }
-#endif
   const uint stride = (Push.Data.RayCount + TRACER_RS_COARSE_FACTOR - 1) / TRACER_RS_COARSE_FACTOR;
   for (uint i = 0; i < TRACER_RS_COARSE_FACTOR; i++) {
     uint localRayIdx = uint(gl_GlobalInvocationID.x) + i * stride;

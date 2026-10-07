@@ -7,17 +7,11 @@ namespace Tracer {
     this->Hash = 0;
     this->RayChunkCapacity = (param.RayCapacity + TRACER_RAY_CHUNK_SIZE - 1) / TRACER_RAY_CHUNK_SIZE;
     this->RayBuffer = GPU::Malloc(sizeof (Ray_chunk) * this->RayChunkCapacity, GPU::GPU_PRIVATE);
-#if !TRACER_RAY_HIT_UNIFIED
-    this->HitBuffer = GPU::Malloc(sizeof (Hit_record_chunk) * this->RayChunkCapacity, GPU::GPU_PRIVATE);
-#endif
   }
 
   void
   Ray_trace_buffers::Free() {
     GPU::Free(this->RayBuffer);
-#if !TRACER_RAY_HIT_UNIFIED
-    GPU::Free(this->HitBuffer);
-#endif
   }
 
   void buildCustomTLAS(const u32 primID, tinybvh::bvhvec3 &bMin, tinybvh::bvhvec3 &bMax, void *data) {
@@ -351,8 +345,9 @@ namespace Tracer {
     const uv2 fbDim = GPU::GetImage(mBaseAttachment)->GetDim();
     const float maximumWindowHeight = swapchainDim.y * 0.45f;
     ImGui::SetNextWindowPos(ImVec2());
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
+    ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), maximumWindowHeight), ImGuiCond_Once);
     ImGui::Begin("Editor");
-    ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), maximumWindowHeight));
     if (ImGui::CollapsingHeader("Controls")) {
       ImGui::Text("WASD: Move");
       ImGui::Text("SHIFT/SPACE: Move vertically");

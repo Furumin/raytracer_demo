@@ -12,9 +12,6 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   Ray ray;
   Camera c = CameraBuffer(data.CameraPointer).Data;
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
-#if !TRACER_RAY_HIT_UNIFIED
-  HitChunkBuffer hitBuffer = HitChunkBuffer(data.Buffers[RT_PCD_HIT_BUF]);
-#endif
   BvhBuffer bvhBuffer = BvhBuffer(data.Buffers[RT_PCD_TLAS_BUF]);
   Hit_record h;
   // (todo) potentially move ray generation to separate pass ( or keep it here,
@@ -37,7 +34,8 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
     if (data.EnableStratifiedSampling == 0) {
     } else {
       // determine grid size
-      // (todo) move to cpu!
+      // (note) should ideally be in CPU, but this operation is so cheap that
+      // practically no harm is done by leaving it here
       uint shiftX = ((data.RaysPerPixelPow2 + 1) >> 1);
       uint tileXCount = 1 << shiftX;
       uint tileYCount = 1 << ((data.RaysPerPixelPow2) >> 1);
@@ -52,10 +50,9 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
     imagePixelPos += offset;
     ray.Direction = rayDirFromPixelPos(c, imagePixelPos) - ray.Position;
     ray.Data = 0;
-    ray.Color = vec3(1.0);
   } else {
     // fetch ray
-    ray = loadRayByIdx(rayBuffer, localRayIdx, false, true);
+    ray = loadRayByIdx(rayBuffer, localRayIdx, true);
   }
   ray.T = FLOAT_INF;
       
@@ -72,6 +69,7 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
     // increment depth
     rayDepth++;
     h.HitPosition = ray.Position + ray.Direction * ray.T;
+    // compress normal by omitting .z and storing its sign in .y LSB
     vec3 normal = normalize(h.HitPosition - sphereCenter);
     const float zSign = sign(normal.z);
     uint nY = floatBitsToUint(normal.y);
@@ -82,46 +80,20 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   } else {
     materialIndex = TRACER_INVALID_MATERIAL;
   }
+  // pack metadata into ray
   ray.Data = (rayDepth << TRACER_DEPTH_O) | ((materialIndex) << TRACER_MATERIAL_O) | (ray.Data & 3);
-  storeRayByIdx(rayBuffer, localRayIdx, ray, data.Depth == 0, false);
-#if TRACER_RAY_HIT_UNIFIED
+  storeRayByIdx(rayBuffer, localRayIdx, ray, false);
+  if (data.Depth == 0) {
+    storeRayClrByIdx(rayBuffer, localRayIdx, vec3(1.0));
+  }
   storeHitByIdx(rayBuffer, localRayIdx, h);
-#else
-  storeHitByIdx(hitBuffer, localRayIdx, h);
-#endif
   return true;
 }
 void main() {
-#if TRACER_PERSISTENT_THREADS
-  /*
-  GlobalCountBuffer gcb = GlobalCountBuffer(Push.Data.Buffers[RT_PCD_CNT_BUF]);
-  const uint batchSize = 1; // how many rays per thread to claim
-  uint batchCounter = 0;
-  uint globalIdx = 0;
-  uint warpCount;
-  uvec4 activeMask = subgroupBallot(true);
-  warpCount = subgroupBallotBitCount(activeMask);
-  uint laneIdx = subgroupBallotExclusiveBitCount(activeMask);
-  uint warpBaseIdx;
-  while (true) {
-    if (batchCounter == 0) {
-      if (subgroupElect()) {
-	warpBaseIdx = atomicAdd(gcb.Count, warpCount * batchSize);
-      }
-      globalIdx = subgroupBroadcastFirst(warpBaseIdx) + laneIdx;
-    }
-    bool traced = rtSphereKernel(globalIdx);
-    globalIdx += (warpCount);
-    batchCounter = (batchCounter + 1) % batchSize;
-    if (subgroupAll(!traced)) break;
-  }
-  */  
-#else
   uint stride = ((Push.Data.RayCount) + TRACER_RT_COARSE_FACTOR - 1) / TRACER_RT_COARSE_FACTOR;
   for (uint i = 0; i < TRACER_RT_COARSE_FACTOR; i++) {
     uint localRayIdx = uint(gl_GlobalInvocationID.x) + i * stride;
     uint rayIdx = Push.Data.RayIdxOffset + localRayIdx;
     bool b = rtSphereKernel(rayIdx, localRayIdx);
   }
-#endif
 }
