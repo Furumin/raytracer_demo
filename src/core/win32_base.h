@@ -355,6 +355,8 @@ int MessageBoxA(HWND, LPCSTR, LPCSTR, UINT);
 #define MessageBox MessageBoxA
   
 BOOL GetWindowRect(HWND, RECT*);
+int GetSystemMetrics(int);
+  BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT);
 
 #if defined(__cplusplus)
 }

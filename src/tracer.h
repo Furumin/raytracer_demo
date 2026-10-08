@@ -89,7 +89,7 @@ namespace Tracer {
 
     u32 mFrameBufferInvRelSizePow2 = 0;
     u32 mRaysPerPixelPow2 = 0;
-    u32 mMaxDepth = 31;
+    u32 mMaxDepth = 15;
 
     u32 mRayFrameCounter = 0;
 

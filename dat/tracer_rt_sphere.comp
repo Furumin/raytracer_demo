@@ -22,7 +22,7 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
     vec2 imagePixelPos = vec2(imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2));
     uint rayI = rayIdx & data.RaysPerPixelPow2;
     float defocusRad = c.FocusDistance * tan(degToRad(c.DefocusAngle * 0.5));
-    vec2 defocus = defocusRad * randomDisk(data.Hash.xw); 
+    vec2 defocus = defocusRad * randomDisk(data.Hash.xy); 
     ray.Position = c.Position + defocus.x * c.Right + defocus.y * c.Up;
     
     // slightly different sub-pixel pos per sample
@@ -91,6 +91,7 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
 }
 void main() {
   uint stride = ((Push.Data.RayCount) + TRACER_RT_COARSE_FACTOR - 1) / TRACER_RT_COARSE_FACTOR;
+  if (gl_GlobalInvocationID.x >= stride) return;
   for (uint i = 0; i < TRACER_RT_COARSE_FACTOR; i++) {
     uint localRayIdx = uint(gl_GlobalInvocationID.x) + i * stride;
     uint rayIdx = Push.Data.RayIdxOffset + localRayIdx;

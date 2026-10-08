@@ -145,7 +145,19 @@ CreateWindow(const char *className, const char *windowName, HINSTANCE instance) 
   return hwnd;
 }
 
-int AppMainProc(void *param) {
+void
+CenterWindow(HWND hw) {
+  RECT r;
+  GetWindowRect(hw, &r);
+  i32 w = r.right - r.left;
+  i32 h = r.bottom - r.top;
+  i32 x = (GetSystemMetrics(0) - w) / 2;
+  i32 y = (GetSystemMetrics(1) - h) / 2;
+  SetWindowPos(hw, 0, x, y, 0, 0, 5); // 5: SWP_NOSIZE | SWP_NOZORDER
+}
+
+int
+AppMainProc(void *param) {
   GPU::Ctx_init_params p = {};
   p.VulkanVersion = VK_MAKE_VERSION(1, 3, 0);
   p.WindowHandle = gAppGlobals.WindowHandle;
@@ -167,6 +179,7 @@ int AppMainProc(void *param) {
     // Latch input
     App_input inp;
     memcpy(V_(&inp), V_(&gAppInput), sizeof (gAppInput));
+    _mm_mfence();
     gInputLatched = true;
     t.UpdateInputs(&inp);
     
@@ -206,6 +219,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* pCmdLineA, int nCmdS
   if (NULL == windowHandle) {
     return -1;
   }
+  CenterWindow(windowHandle);
   ShowWindow(windowHandle, nCmdShow);
   gAppGlobals.Set(windowHandle, hInstance);
   gRunApp = true;
@@ -221,6 +235,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* pCmdLineA, int nCmdS
     }
     if (gInputLatched) {
       // reset all key/mouse states
+      _mm_mfence();
       gAppInput.Reset();
       gInputLatched = false;
     }

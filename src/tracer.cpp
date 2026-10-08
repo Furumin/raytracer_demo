@@ -357,7 +357,8 @@ namespace Tracer {
     {
       // debug button status
       ImGui::PushItemWidth(ImGui::GetFontSize() * 8.0f);
-      ImGui::Text("Tick count: %llu", mTickCount);
+      ImGui::Text("Forward: %u, %u", (u32)mInput.States[Input_stream::CURRENT].KeyStates['W'], (u32)mInput.States[Input_stream::PREVIOUS].KeyStates['W']);
+      ImGui::Text("Tick count / Since last accum started: %llu / %llu", mTickCount, (u64)mAccumSamplesCount);
       const uv4 thisFrameHash = GetHash(mTickCount, mMaxDepth, 0);
       ImGui::Text("This frame's hash (at depth 0): { %u, %u, %u, %u }", thisFrameHash.x, thisFrameHash.y, thisFrameHash.z, thisFrameHash.w);
       ImGui::Text("Swapchain dim.: %u, %u", swapchainDim.x, swapchainDim.y);
@@ -368,7 +369,7 @@ namespace Tracer {
 	mAccumTimeCounts += 1.0;
 	double avg = mAccumTime / mAccumTimeCounts;
 	ImGui::Text("Ray count / Ray buffer capacity : %u / %u", params.RayCountThisFrame, params.RayCapacity);
-	ImGui::Text("Trace time (microsecs) / FPS: %f / %f", avg, (1000000.0) / avg);
+	ImGui::Text("Total time (microsecs) / FPS: %f / %f", avg, (1000000.0) / avg);
       }
       if (ShouldEnablePartialRendering(params.TotalRayCount, params.RayCapacity)) {
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.99f, 1.0f, 0.1f, 1.0f));
@@ -390,28 +391,29 @@ namespace Tracer {
     }
     ImGui::SeparatorText("Other");
     {
-      bool pdfOff = mPermanentProgramSignals & TRACER_PS_NO_PDF_BIT;
       u32 bits[] = {
 	TRACER_PS_NO_ACCUM_BIT,
 	TRACER_PS_NO_AA_BIT,
 	TRACER_PS_NO_SS_BIT,
 	TRACER_PS_NO_PDF_BIT,
+	TRACER_PS_NO_RR_BIT
       };
       const char* names[] = {
 	"color accumulation",
 	"anti-aliasing",
 	"stratified sampling",
-	"importance sampling"
+	"importance sampling",
+	"russian roulette"
       };
       char buf[1024];
       for (u32 i = 0; i < ARRAYCOUNT(bits); i++) {
 	bool status = mPermanentProgramSignals & bits[i];
 	sprintf(buf, "Turn off %s", names[i]);
 	ImGui::Checkbox(buf, &status);
+	u32 m = mPermanentProgramSignals;
 	mPermanentProgramSignals = status ? (mPermanentProgramSignals | bits[i]) : (mPermanentProgramSignals & ~(bits[i]));
-      }
-      if (pdfOff != (bool)(mPermanentProgramSignals & TRACER_PS_NO_PDF_BIT)) {
-	mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
+	if (m != mPermanentProgramSignals)
+	  resetColorAccum = resetTimer = true;
       }
       i32 d = mMaxDepth;
       resetTimer |= ImGui::SliderInt("Depth", &d, 0, TRACER_MAX_DEPTH);
@@ -425,7 +427,7 @@ namespace Tracer {
       d = mFrameBufferInvRelSizePow2;
       bool changeDim = ImGui::SliderInt("Framebuffer size rel. window (pow 2)", &d, 0, 4);
       ImGui::PopItemWidth();
-      resetColorAccum |= ImGui::SliderFloat4("Sky color", mSkyColor.v, 0.0f, 1.0f);
+      resetColorAccum |= ImGui::SliderFloat3("Sky color", mSkyColor.v, 0.0f, 1.0f);
       mFrameBufferInvRelSizePow2 = d;
       if (changeDim) {
 	GPU::WaitIdle();
@@ -516,7 +518,6 @@ namespace Tracer {
     GPU::Pointer camP = bmp->Bump<Camera>(1);
     camP.Write(&cam, sizeof (cam));
     const u64 rayBufferPointer = mRayBuffers.RayBuffer.Gpu();
-    // ray trace
     const u32 maxDepth = mMaxDepth;
     // only render part of frame
     if (ShouldEnablePartialRendering(totalRayCount, rayCapacity)) {
@@ -530,11 +531,12 @@ namespace Tracer {
     } else {
       mRayFrameCounter = 0;
     }
-    // unused if TRACER_PERSISTENT_THREADS = 0
-    GPU::Pointer globalCountBuffer = bmp->Bump<u32>(1);
-    const u32 defaultCount = 0;
-    globalCountBuffer.Write(&defaultCount, sizeof (u32));
-    
+    GPU::Stage_barrier computeBarrier = {
+      .SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+      .SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+      .DstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+      .DstAccessMask = VK_ACCESS_2_SHADER_READ_BIT
+    };    
     for (u32 i = 0; i < maxDepth; i++) {
       const uv4 hash = GetHash(mTickCount, maxDepth, i);
       pCmdBuf->SetKernel(mSphereTestKernel);
@@ -553,18 +555,13 @@ namespace Tracer {
       rt.Buffers[RT_PCD_RAY_BUF] = rayBufferPointer;
       rt.Buffers[RT_PCD_TLAS_BUF] = mObjectBuffers.GPUTLAS[Object_type::SPHERE].Gpu();
       rt.Buffers[RT_PCD_OBJ_BUF] = mObjectBuffers.ObjectBuffer.Gpu();
-#if !TRACER_RAY_HIT_UNIFIED
-      rt.Buffers[RT_PCD_HIT_BUF] = mRayBuffers.HitBuffer.Gpu();
-#endif
-      rt.Buffers[RT_PCD_CNT_BUF] = globalCountBuffer.Gpu();
       // work group count
       uv3 wgc;
       // rays per thread
-      u32 rpt = TRACER_RT_WORKGROUP_SIZE * TRACER_RT_COARSE_FACTOR;
-      wgc.x = (effRayCount + rpt - 1) / rpt;
-#if TRACER_PERSISTENT_THREADS
-      wgc.x = 64;
-#endif
+      u32 coarseF = TRACER_RT_COARSE_FACTOR;
+      // how many threads to cover all rays? ceil(effRayCount / coarse factor)
+      u32 totalThreads = (effRayCount + coarseF - 1) / coarseF;
+      wgc.x = (totalThreads + TRACER_RT_WORKGROUP_SIZE - 1) / TRACER_RT_WORKGROUP_SIZE;
       wgc.y = 1;
       wgc.z = 1;
       pCmdBuf->PushConstants(&rt);
@@ -578,31 +575,24 @@ namespace Tracer {
 	// high 16 are depth, LSB is last bounce flag
 	.DepthAndFlags = (i << 16) |
   	  (i == maxDepth - 1 ? TRACER_RS_LAST_BOUNCE_BIT : 0) |
-	  ((mProgramSignals & TRACER_PS_NO_PDF_BIT) ? TRACER_RS_NO_PDF_BIT : 0),
+	  ((mProgramSignals & TRACER_PS_NO_PDF_BIT) ? TRACER_RS_NO_PDF_BIT : 0) |
+	  ((mProgramSignals & TRACER_PS_NO_RR_BIT) ? TRACER_PS_NO_RR_BIT : 0),
 	.RayCount = effRayCount,
 	.RaysPerPixelPow2 = raysPerPixelPow2,
-#if !TRACER_RAY_HIT_UNIFIED
-	.HitBuffer = rt.Buffers[RT_PCD_HIT_BUF],
-#endif
 	.MaterialBuffer = mObjectBuffers.MaterialBuffer.Gpu(),
 	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF],
-	.GlobalCountBuffer = globalCountBuffer.Gpu(),
 	.SkyColor = mSkyColor,
 	.SunData = mSunData
       };
-      rpt = TRACER_RS_WORKGROUP_SIZE * TRACER_RS_COARSE_FACTOR;
-      wgc.x = (effRayCount + rpt - 1) / rpt;
-      GPU::Stage_barrier barrier = {
-	.SrcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-	.SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
-	.DstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-	.DstAccessMask = VK_ACCESS_2_SHADER_READ_BIT
-      };
-      pCmdBuf->StageBarrier(&barrier, 1);
+      coarseF = TRACER_RS_COARSE_FACTOR;
+      // how many threads to cover all rays? ceil(effRayCount / coarse factor)
+      totalThreads = (effRayCount + coarseF - 1) / coarseF;
+      wgc.x = (totalThreads + TRACER_RS_WORKGROUP_SIZE - 1) / TRACER_RS_WORKGROUP_SIZE;
+      pCmdBuf->StageBarrier(&computeBarrier, 1);
       pCmdBuf->SetKernel(mShaderKernel);
       pCmdBuf->PushConstants(&rs);
       pCmdBuf->Dispatch(wgc);
-      pCmdBuf->StageBarrier(&barrier, 1);
+      pCmdBuf->StageBarrier(&computeBarrier, 1);
     }
     // tonemap img, to general
     barriers[0] = {
@@ -626,7 +616,7 @@ namespace Tracer {
       .RayIdxOffset = rayIdxOffset,
       .RayCount = effRayCount
     };
-    // even if we take >1 spp, we avg. them in the shader, treating them as one.
+    // even if we take >1 spp in a frame, we avg. them in the shader, treating them as one.
     mAccumSamplesCount += 1;
     
     pCmdBuf->SetKernel(mScreenWriteKernel);

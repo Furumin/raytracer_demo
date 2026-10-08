@@ -85,7 +85,6 @@ vec3 randomHemisphereVec3(uint seed, vec3 normal) {
 }
 
 vec3 randomUnitVec3(uvec3 seeds) {
-  //  return normalize(vec3(randomFloatNorm(seeds[0]), randomFloatNorm(seeds[1]), randomFloatNorm(seeds[2])));
   float th = randomFloatNorm(seeds[0]) * PI + PI;
   float z = randomFloatNorm(seeds[1]);
   float sq = sqrt(1 - z * z);

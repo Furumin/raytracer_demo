@@ -62,11 +62,21 @@ namespace _App_input_details {
     *k = (u8)nk;  
   }
 
+#define GET_BIT(a, b) ((a >> b) & 1)
+#define SET_BIT(a, b, value) ((a) & (~(1 << (b)))) | ((value) & 1)
+
   inline void
   ResetKeyStates(u8 *k) {
     u32 a = (u32)*k;
-    if (a & 0b0010) a >>= 1; // set KS[0] to KS[1] if KS[1] was recorded
-    a &= (~0b0011);
+    if (a & 0b0010) {
+      // a >>= 1; // set KS[0] to KS[1] if KS[1] was recorded
+      a = SET_BIT(a, 2, GET_BIT(a, 3));
+    }
+    else if (a & 0b0001) {
+      // copy bit
+      a = SET_BIT(a, 3, GET_BIT(a, 2));
+    }
+    a &= (0b1100);
     *k = (u8)a;
   }
 }

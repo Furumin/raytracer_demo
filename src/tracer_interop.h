@@ -29,6 +29,7 @@ namespace Tracer {
 #define TRACER_PS_PR_BIT (32) // path regularization, curr. unused
 #define TRACER_PS_NO_PDF_BIT (64)
 #define TRACER_PS_EXT_RESIZED_BIT (128)
+#define TRACER_PS_NO_RR_BIT (256) // russian roulette
   
 #define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
