@@ -842,15 +842,16 @@ extern "C" {
 
     _GpuAllocMakeBlockFree(a, indexFirst);
 
-    if (IS_TLSF_BLOCK_LAST(second)) {
+    u32 isSecondLast = IS_TLSF_BLOCK_LAST(second) ? 1 : 0;
+    if (isSecondLast) {
       _SetBlockLast((u32*)first, 1);
-      _SetBlockLast((u32*)second, 0);
+      //      _SetBlockLast((u32*)second, 0);
     }
   
     second[0].NextPhysicalBlock = 0xffffffff;
     second[0].PreviousPhysicalBlock = 0xffffffff;
     //recycle the node in second
-    second[0].Size = 0xffffffff;
+    second[0].Size = 0xfffffffc; // all flags as 0
     second[0].Offset = 0xffffffff;
     second[0].NextFree = a[0].FirstFree;
     a[0].FirstFree     = indexSecond;
@@ -879,7 +880,7 @@ extern "C" {
       _GpuAllocCoalesce(a, toFree, nextPhys);
     }
 
-    if (toFree[0].PreviousPhysicalBlock != 0xffffffff	&&
+    if (toFree[0].PreviousPhysicalBlock != 0xffffffff &&
 	IS_TLSF_BLOCK_FREE(prevPhys)) {
       _GpuAllocCoalesce(a, prevPhys, toFree);
     }

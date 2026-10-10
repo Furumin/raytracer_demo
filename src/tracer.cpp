@@ -1,5 +1,7 @@
 #include "tracer.h"
 
+#define TRACER_ENABLE_DRAGON (1)
+#define TRACER_IMAGE_DIM_CAP (2000) 
 namespace Tracer {
 
   void
@@ -15,12 +17,10 @@ namespace Tracer {
   }
 
   void buildCustomTLAS(const u32 primID, tinybvh::bvhvec3 &bMin, tinybvh::bvhvec3 &bMax, void *data) {
-    Object *obj = &((Object*)data)[primID];
-    ASSERT(obj->Type == Object_type::SPHERE, "Only sphere TLAS is supported!");
-    tinybvh::bvhvec3 pos {obj->Transform[3], obj->Transform[7], obj->Transform[11]};
-    // diagonals in matrix store scale, which equals radius for a sphere
-    bMin = pos - tinybvh::bvhvec3(obj->Transform[0]);
-    bMax = pos + tinybvh::bvhvec3(obj->Transform[0]);
+    Sphere_object *obj = &((Sphere_object*)data)[primID];
+    tinybvh::bvhvec3 pos {obj->PositionRadius.x, obj->PositionRadius.y, obj->PositionRadius.z};
+    bMin = pos - tinybvh::bvhvec3(obj->PositionRadius.w);
+    bMax = pos + tinybvh::bvhvec3(obj->PositionRadius.w);
   }
 
   void
@@ -28,41 +28,26 @@ namespace Tracer {
     u32 totalObjectCount = param.SphereCount;
     const u32 materialCount = param.MaterialCount;
     totalObjectCount = MIN(totalObjectCount, (1 << TRACER_OBJ_INDEX_BIT_COUNT));
-    this->ObjectBuffer = GPU::Malloc(sizeof (Object) * totalObjectCount, GPU::GPU_PRIVATE);
+    this->ObjectBuffer = GPU::Malloc(sizeof (Sphere_object) * totalObjectCount, GPU::GPU_PRIVATE);
     GPU::Bump_alloc *bumpAlloc = GPU::GetBumpAlloc(GPU::CPU_ACCESS);
     // make objects (only spheres for now)
-    Object *objCpuBuffer = pScratch->Push<Object>(totalObjectCount);
+    Sphere_object *objCpuBuffer = pScratch->Push<Sphere_object>(totalObjectCount);
     u32 i = 0;
     // build default sphere BVH
     for (; i < param.SphereCount; i++) {
-      // ignore material for now
-      Sphere sph;
-      sph.Position = *((v3*)((u8*)param.SpherePositions + param.SpherePositionStride * i));
-      sph.Radius = *((float*)((u8*)param.SphereRadii + param.SphereRadiusStride * i));
-      Object *obj = objCpuBuffer + i;
-      *obj = { };
-      obj->Type = Object_type::SPHERE;
-      // set scale ( = radius)
-      obj->Transform[0] = sph.Radius;
-      obj->Transform[5] = sph.Radius;
-      obj->Transform[10] = sph.Radius;
-      // row-major, set pos
-      obj->Transform[3] = sph.Position.x;
-      obj->Transform[7] = sph.Position.y;
-      obj->Transform[11] = sph.Position.z;
-      obj->MaterialIndex = param.SphereMaterialIndices[i];
+      objCpuBuffer[i] = param.Spheres[i];
     }
     tinybvh::BVH tempBVH;
     tempBVH.customUserdata = objCpuBuffer;
     tempBVH.Build(&buildCustomTLAS, totalObjectCount);
     this->CPUTLAS[Object_type::SPHERE].ConvertFrom(tempBVH);
     // write objects, bvh to GPU. tinybvh reorders primitives, so we have to account for that
-    GPU::Pointer objBuffer = bumpAlloc->Bump<Object>(totalObjectCount);
-    Object *objGpuBuffer = (Object*)objBuffer.Cpu();
+    GPU::Pointer objBuffer = bumpAlloc->Bump<Sphere_object>(totalObjectCount);
+    Sphere_object *objGpuBuffer = (Sphere_object*)objBuffer.Cpu();
     for (u32 i = 0; i < totalObjectCount; i++) {
       objGpuBuffer[i] = objCpuBuffer[tempBVH.primIdx[i]];
     }
-    pCmdBuf->MemCpy(objBuffer, this->ObjectBuffer, sizeof (Object) * totalObjectCount);
+    pCmdBuf->MemCpy(objBuffer, this->ObjectBuffer, sizeof (Sphere_object) * totalObjectCount);
     const u32 bvhSize = sizeof (Bvh2) * this->CPUTLAS[Object_type::SPHERE].usedNodes;
     GPU::Pointer bvhStaging = bumpAlloc->Bump<Bvh2>(this->CPUTLAS[Object_type::SPHERE].usedNodes);
     this->GPUTLAS[Object_type::SPHERE] = GPU::Malloc(bvhSize, GPU::GPU_PRIVATE);
@@ -71,8 +56,9 @@ namespace Tracer {
 
     // materials, insert each material into AoSoA chunk
     u32 materialChunkCount = (materialCount + TRACER_MATERIAL_CHUNK_SIZE - 1) / TRACER_MATERIAL_CHUNK_SIZE;
-    this->MaterialBuffer = GPU::Malloc(sizeof (Material_chunk) * materialChunkCount, GPU::CPU_ACCESS);
-    Material_chunk *mc = (Material_chunk*)this->MaterialBuffer.Cpu();
+    this->MaterialBuffer = GPU::Malloc(sizeof (Material_chunk) * materialChunkCount, GPU::GPU_PRIVATE);
+    GPU::Pointer matStaging = bumpAlloc->Bump<Material_chunk>(materialChunkCount);
+    Material_chunk *mc = (Material_chunk*)matStaging.Cpu();////(Material_chunk*)this->MaterialBuffer.Cpu();
     u32 matI = 0;
     for (u32 i = 0; i < materialChunkCount; i++) {
       for (u32 j = 0; j < TRACER_MATERIAL_CHUNK_SIZE; j++, matI++) {
@@ -90,6 +76,7 @@ namespace Tracer {
 	}
       }
     }
+    pCmdBuf->MemCpy(matStaging, this->MaterialBuffer, sizeof (Material_chunk) * materialChunkCount);
   }
 
   void
@@ -141,43 +128,69 @@ namespace Tracer {
   void
   World::FirstFrameLoad(const GPU::Cmd_buf *pCmdBuf) {
     Scratch scratch(&mScratchArena);
-    mSphereCount = 10000;
-    const u32 matCount = 6;
-    Sphere *s = scratch.Push<Sphere>(mSphereCount);
+    mSunData = {0, 26.0f, 50.0f, 6.0f};
+    mSphereCount = 11000;
+#if TRACER_ENABLE_DRAGON
+    const char *filePath = "dat/bin/Dragon.vrt";
+    Util::File f;
+    int dragonFileRes = Util::OpenFile(filePath, Util::IO_FILE_READ | Util::IO_FILE_SHARE_READ | Util::IO_OPEN_ONLY | Util::IO_FLAG_MEM_MAP, &f, 0);
+    if (dragonFileRes) {
+      DEBUGLOG("Could not load mesh.");
+      mPermanentProgramSignals |= TRACER_PS_SKIP_EXEC_BIT;
+      return;
+    }
+    // first 4 bytes: vertex count
+    u32 dragonVertexCount = 0;
+    u8 *cursor = (u8*)f.MappedMemory;
+    memcpy(&dragonVertexCount, cursor, sizeof (u32));
+    cursor += sizeof (u32);
+    mSphereCount += dragonVertexCount;
+#endif 
+    Util::Stdlib_memory_alloc allocator;
+    Sphere_object *so = allocator.Alloc<Sphere_object>(mSphereCount);
+    memset(so, 0x00, sizeof (Sphere_object) * mSphereCount);
+    ASSERT(so, "Not enough memory for spheres!");
+    u32 i = 0;
+#if TRACER_ENABLE_DRAGON
+    for (; i < dragonVertexCount; i++) {
+      memcpy(so[i].PositionRadius.v, cursor, sizeof (v3));
+      cursor += sizeof (v3);
+      so[i].PositionRadius.w = TRACER_PARTICLE_RADIUS;
+      so[i].PositionRadius.x *= 0.1f;
+      so[i].PositionRadius.y *= 0.1f;
+      so[i].PositionRadius.z *= 0.1f;
+      so[i].PositionRadius.y += 9.10f;
+      so[i].PositionRadius.z += mSunData.z - 14.0f;
+      so[i].MaterialIndex = 6;
+  }
+  Util::CloseFile(&f);
+#endif 
+    const u32 matCount = 7;
     Material *materials = scratch.Push<Material>(matCount);
-    u32 *materialIndices = scratch.Push<u32>(mSphereCount);
     Object_buffers_create_param objCreateParam = {
       .Materials = materials,
       .MaterialCount = matCount,
-      .SphereMaterialIndices = materialIndices,
-      .SpherePositions = V_(&s[0].Position),
-      .SpherePositionStride = sizeof (Sphere),
-      .SphereRadii = V_(&s[0].Radius),
-      .SphereRadiusStride = sizeof (Sphere),
+      .Spheres = so,
       .SphereCount = mSphereCount
     };
-    s[0] = {
-      .Position = {0, -1000, 0},
-      .Radius = 998.999f
+    so[i++] = {
+      .PositionRadius = {0, -1000, 0, 998.999f},
+      .MaterialIndex = 3
     };
-    materialIndices[0] = 3;
-    u32 i;
-    for (i = 1; i < mSphereCount - 1; i++) {
-      s[i].Position.x = -50.0f + (float)(i % 51) * 1.5f;
-      s[i].Position.y = ((float)(hash1(i-1) % 6000) / 3000.0f) * 1.5f;
-      s[i].Position.z = -51.0f + (float)(hash1(i+32) % 90) * 1.7f;
-      s[i].Radius = (float)(2 + hash1(i + 15) % 7) * 0.1;
-      materialIndices[i] = hash1(i) % 4;
+    for (; i < mSphereCount - 1; i++) {
+      so[i].PositionRadius.x = -50.0f + (float)(i % 51) * 1.5f;
+      so[i].PositionRadius.y = ((float)(hash1(i-1) % 6000) / 3000.0f) * 1.5f;
+      so[i].PositionRadius.z = -51.0f + (float)(hash1(i+32) % 90) * 1.7f;
+      so[i].PositionRadius.w = (float)(2 + hash1(i + 15) % 7) * 0.1;
+      so[i].ParticleNormal = {};
+      so[i].MaterialIndex = hash1(i) % 4;
     }
     // sun
-    mSunData = {0, 15.0f, 50.0f, 6.0f};
     for (mSunObjectIndex = i; i < mSphereCount; i++) {
-      s[i].Position.x = mSunData.x;
-      s[i].Position.y = mSunData.y;
-      s[i].Position.z = mSunData.z;
-      s[i].Radius = mSunData.w;
-      materialIndices[i] = 5;
-      mSunMaterialIndex = materialIndices[i];
+      so[i].PositionRadius = mSunData;
+      so[i].ParticleNormal = {};
+      so[i].MaterialIndex = 5;
+      mSunMaterialIndex = so[i].MaterialIndex;
     }
     // lights
     materials[0] = {
@@ -186,7 +199,7 @@ namespace Tracer {
       .Flags = TRACER_MATERIAL_FLAG_METALLIC,
     };
     materials[1] = {
-      .Color = {0.95, 0.99, 0.95},
+      .Color = {0.62, 0.99, 0.65},
       .Roughness = 0.25f,
       .RefractionIndex = 1.56f
     };
@@ -208,8 +221,13 @@ namespace Tracer {
       .Roughness = 0.0f,
       .Flags = TRACER_MATERIAL_FLAG_EMISSIVE
     };
-    mRayBuffers.Init({.RayCapacity = (MEGA(4) + KILO(400))});
+    materials[6] = {
+      .Color = {0.69, 0.27, 0.9},
+      .RefractionIndex = 1.333f,
+    };
+    mRayBuffers.Init({.RayCapacity = (MEGA(2))});
     mObjectBuffers.Init(&scratch, pCmdBuf, objCreateParam);
+    allocator.Free(so);
     GPU::Stage_barrier barriers[2] = {
       {
 	.SrcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
@@ -238,9 +256,12 @@ namespace Tracer {
 #if TRACER_SPECTRAL_MODE
     DEBUGLOG(stderr, "Spectral mode enabled.\n");
 #endif 
-    mScratchArena.Init(MEGA(2));
+    mScratchArena.Init(MEGA(96));
     uv2 swapchainDim = GPU::GetSwapchainDim();
     uv2 imgDim = {swapchainDim.x >> mFrameBufferInvRelSizePow2, swapchainDim.y >> mFrameBufferInvRelSizePow2};
+    // cap image size due to memory
+    imgDim.x = MIN(2000, imgDim.x);
+    imgDim.y = MIN(2000, imgDim.y);
     mBaseAttachment = GPU::CreateImage({
 	.Format = VK_FORMAT_R32G32B32A32_SFLOAT,
 	.Extent = {imgDim.x, imgDim.y, 1},
@@ -262,11 +283,11 @@ namespace Tracer {
       mPermanentProgramSignals |= TRACER_PS_SKIP_EXEC_BIT;
     }
     mCamera = {
-      .Position = {0, 0, 0}
+      .Position = {0, 10, 0}
     };
     mCamera.Forward = {0, 0, 1};
     mCamera.Up = {0, 1, 0};
-    mCamera.VFov = RadFromDeg(45.0f);
+    mCamera.VFov = RadFromDeg(30.0f);
     mCamera.FocusDistance = 10.0f;
     ReinitCamera(imgDim);
     mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
@@ -275,8 +296,10 @@ namespace Tracer {
   bool
   World::PollMovement() {
     bool moved = false;
-    const float spd = 0.1f;
-    const float rotspd = 0.4f * (mCamera.VFov / TRACER_MAX_CAMERA_VFOV);
+    const double targetFrameTime = 16666.66666;
+    // aim for a speed of 0.4 at 60 fps. at lower fps, increase spd accordingly. vice versa at higher fps
+    const float spd = 0.4f * (mAccumTimeCounts > 0.0 ? (mAccumTime / mAccumTimeCounts) : targetFrameTime) / (targetFrameTime);
+    const float rotspd = spd * (mCamera.VFov / TRACER_MAX_CAMERA_VFOV);
     quat caminv = nquatinv(mCameraQuat);
     v3 u = {0, 1, 0};
     v3 globalUpInLocalCoord = quatrotv3(caminv, u);
@@ -316,7 +339,11 @@ namespace Tracer {
       }
     }
     if (moved) {
-      mProgramSignals |= TRACER_PS_NO_ACCUM_BIT | TRACER_PS_NO_AA_BIT;
+      // disable accum, as it makes no sense to accumulate while moving
+      // disable aa, as it causes shaking
+      // disable ss (stratified sampling), same reason as above
+      // disable cr, as it is meaningless without aa and ss
+      mProgramSignals |= (TRACER_PS_NO_ACCUM_BIT | TRACER_PS_NO_AA_BIT | TRACER_PS_NO_SS_BIT | TRACER_PS_NO_CR_BIT);
       ReinitCamera(GPU::GetImage(mBaseAttachment)->GetDim());
     }
     return moved;
@@ -357,8 +384,8 @@ namespace Tracer {
     {
       // debug button status
       ImGui::PushItemWidth(ImGui::GetFontSize() * 8.0f);
-      ImGui::Text("Forward: %u, %u", (u32)mInput.States[Input_stream::CURRENT].KeyStates['W'], (u32)mInput.States[Input_stream::PREVIOUS].KeyStates['W']);
       ImGui::Text("Tick count / Since last accum started: %llu / %llu", mTickCount, (u64)mAccumSamplesCount);
+      ImGui::Text("Accumulated samples per pixel: %u", ((u32)mAccumSamplesCount) << mRaysPerPixelPow2);
       const uv4 thisFrameHash = GetHash(mTickCount, mMaxDepth, 0);
       ImGui::Text("This frame's hash (at depth 0): { %u, %u, %u, %u }", thisFrameHash.x, thisFrameHash.y, thisFrameHash.z, thisFrameHash.w);
       ImGui::Text("Swapchain dim.: %u, %u", swapchainDim.x, swapchainDim.y);
@@ -369,7 +396,7 @@ namespace Tracer {
 	mAccumTimeCounts += 1.0;
 	double avg = mAccumTime / mAccumTimeCounts;
 	ImGui::Text("Ray count / Ray buffer capacity : %u / %u", params.RayCountThisFrame, params.RayCapacity);
-	ImGui::Text("Total time (microsecs) / FPS: %f / %f", avg, (1000000.0) / avg);
+	ImGui::Text("Frame time (microsecs) / FPS: %.2f / %.2f", avg, (1000000.0) / avg);
       }
       if (ShouldEnablePartialRendering(params.TotalRayCount, params.RayCapacity)) {
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.99f, 1.0f, 0.1f, 1.0f));
@@ -379,6 +406,7 @@ namespace Tracer {
       ImGui::PopItemWidth();
       ImGui::SeparatorText("Camera");
       ImGui::PushItemWidth(MIN(ImGui::GetContentRegionAvail().x * 0.6f, 80.0f));
+      ImGui::Text("Position: {%.2f, %.2f, %.2f}", mCamera.Position.x, mCamera.Position.y, mCamera.Position.z);
       float degvfov = DegFromRad(mCamera.VFov);
       resetColorAccum |= ImGui::InputFloat("Vertical FOV", &degvfov, 0.1f, 1.0f, "%.1f");
       float newVFov = MIN(RadFromDeg(degvfov), TRACER_MAX_CAMERA_VFOV);
@@ -396,14 +424,16 @@ namespace Tracer {
 	TRACER_PS_NO_AA_BIT,
 	TRACER_PS_NO_SS_BIT,
 	TRACER_PS_NO_PDF_BIT,
-	TRACER_PS_NO_RR_BIT
+	TRACER_PS_NO_RR_BIT,
+	TRACER_PS_NO_CR_BIT
       };
       const char* names[] = {
 	"color accumulation",
 	"anti-aliasing",
 	"stratified sampling",
 	"importance sampling",
-	"russian roulette"
+	"russian roulette",
+	"correct reconstruction"
       };
       char buf[1024];
       for (u32 i = 0; i < ARRAYCOUNT(bits); i++) {
@@ -427,7 +457,7 @@ namespace Tracer {
       d = mFrameBufferInvRelSizePow2;
       bool changeDim = ImGui::SliderInt("Framebuffer size rel. window (pow 2)", &d, 0, 4);
       ImGui::PopItemWidth();
-      resetColorAccum |= ImGui::SliderFloat3("Sky color", mSkyColor.v, 0.0f, 1.0f);
+      resetColorAccum |= ImGui::InputFloat3("Sky color", mSkyColor.v);
       mFrameBufferInvRelSizePow2 = d;
       if (changeDim) {
 	GPU::WaitIdle();
@@ -470,11 +500,11 @@ namespace Tracer {
     }
     const u32 rayCapacity = mRayBuffers.RayChunkCapacity * TRACER_RAY_CHUNK_SIZE;
     GPU::Image *baseImg = GPU::GetImage(mBaseAttachment);
-    const uv2 imageDim = baseImg->GetDim();
+    uv2 imageDim = baseImg->GetDim();
     GPU::Image *tonemapImg = GPU::GetImage(mTonemapAttachment);
     GPU::Image swapchainImage = GPU::GetSwapchainImage(imageIndex);
     u32 raysPerPixelPow2 = mRaysPerPixelPow2;
-    const u32 totalRayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
+    u32 totalRayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
     u32 rayIdxOffset = 0;
     u32 effRayCount = totalRayCount;
     pCmdBuf->ResetTimestamps();
@@ -486,6 +516,10 @@ namespace Tracer {
 	.RayCountThisFrame = effRayCount,
 	.TotalRayCount = totalRayCount,
 	.RayCapacity = rayCapacity});
+    imageDim = baseImg->GetDim(); // may have changed after polling editor
+    raysPerPixelPow2 = mRaysPerPixelPow2;
+    totalRayCount = imageDim.x * imageDim.y * (1 << raysPerPixelPow2);
+    effRayCount = totalRayCount;
     
     // swapchain, to transfer dst
     GPU::Image_barrier barriers[3];
@@ -536,7 +570,11 @@ namespace Tracer {
       .SrcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
       .DstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
       .DstAccessMask = VK_ACCESS_2_SHADER_READ_BIT
-    };    
+    };
+    // used for generated image sample positions
+    const uv4 firstHash = GetHash(mTickCount, maxDepth, 0);
+    const u32 aaOn = (u32)(mProgramSignals & TRACER_PS_NO_AA_BIT ? (0) : (1));
+    const u32 ssOn =(u32)(mProgramSignals & TRACER_PS_NO_SS_BIT ? (0) : (1));
     for (u32 i = 0; i < maxDepth; i++) {
       const uv4 hash = GetHash(mTickCount, maxDepth, i);
       pCmdBuf->SetKernel(mSphereTestKernel);
@@ -549,8 +587,8 @@ namespace Tracer {
 	.RaysPerPixelPow2 = raysPerPixelPow2,
 	.RayCount = effRayCount,
 	.Depth = i,
-	.EnableAntiAliasing = (u32)(mProgramSignals & TRACER_PS_NO_AA_BIT ? (0) : (1)),
-	.EnableStratifiedSampling = (u32)(mProgramSignals & TRACER_PS_NO_SS_BIT ? (0) : (1))
+	.EnableAntiAliasing = aaOn,
+	.EnableStratifiedSampling = ssOn
       };
       rt.Buffers[RT_PCD_RAY_BUF] = rayBufferPointer;
       rt.Buffers[RT_PCD_TLAS_BUF] = mObjectBuffers.GPUTLAS[Object_type::SPHERE].Gpu();
@@ -614,7 +652,11 @@ namespace Tracer {
       .RaysPerPixelPow2 = raysPerPixelPow2,
       .RayBuffer = rayBufferPointer,
       .RayIdxOffset = rayIdxOffset,
-      .RayCount = effRayCount
+      .RayCount = effRayCount,
+      .EnableAntiAliasing = aaOn,
+      .EnableStratifiedSampling = ssOn,
+      .Hash = firstHash,
+      .EnableCorrectReconstruction = (u32)((mProgramSignals & TRACER_PS_NO_CR_BIT) ? 0 : 1)
     };
     // even if we take >1 spp in a frame, we avg. them in the shader, treating them as one.
     mAccumSamplesCount += 1;
@@ -674,6 +716,8 @@ namespace Tracer {
   World::OnResize(uv2 newDim) {
     if (newDim.x > 0) {
       uv2 fbDim = { newDim.x >> mFrameBufferInvRelSizePow2, newDim.y >> mFrameBufferInvRelSizePow2 };
+      fbDim.x = MIN(2000, fbDim.x);
+      fbDim.y = MIN(2000, fbDim.y);
       ResizeImage(mBaseAttachment, {fbDim.x, fbDim.y, 1});
       ResizeImage(mTonemapAttachment, {fbDim.x, fbDim.y, 1});
       ReinitCamera(fbDim);

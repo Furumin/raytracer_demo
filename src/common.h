@@ -45,25 +45,30 @@ namespace _App_input_details {
   GetAppInputIndex(u32 virtualKeyCode) {
     return (i32)virtualKeyCode;
   }
+  // k[1:0] dictates states 1 and 0.
+  // the first write each loop is to state 0 (k[2]), which asserts k[0] (write flag)
+  // all subsequent writes are to state 1 stored in k[3], which asserts k[1] (write flag)
+  // bits k[7:4] are unused
   inline void
   SetKey(u8 *k, u32 state) {
     ASSERT(state < 2, "Invalid state bit!");
     u32 nk = (u32)*k; // copy key
     u32 nks = nk & 0b0011; // get state bits
-    u32 ns = (nks << 1) | 1; // if nks == 0, nks = 1; if nks == 1, nks = 3;
+    u32 ns = (nks << 1) | 1; // if nks == 0, ns = 1; if nks == 1, ns = 3;
+    // if ns > 3 (state has been latches twice) but new state doesnt match state 1, overwrite state 1
     ns = MIN(ns, 0b0011); // clamp
-    u32 shf = (nks & 0b0011); // decide which bit to set.
-    u32 st = ((state << shf) & 0b0011) << (2); // shift 1 bit if S0 was already recorded, otherwise shift more bits. we mask those bits out, making the write null. then we shift it into the position of where we store key value
-    st |= ns; // update status bits
-    // wipe nk if no states are set
-    u32 nullmask = nks == 0b0011 ? 0b1100 : (nks == 0b0000 ? 0b0000 : 0b0100); // reset KS[0] if first set (nks is 0), reset KS[1] (but keep KS[0]) if second set (nks is 1). if both are set, reset nothing
-    nk &= nullmask;
+    u32 shf = (nks & 0b0001); // decide which bit to set. nks is 0 => set first state, otherwise set second state
+    u32 st = ((state << shf) & 0b0011) << (2); // shift 1 bit if S0 was already recorded
+    st |= ns; // add updated status bits
+    // reset state 0 if first write (nks is 0), otherwise only reset state 1
+    u32 nullmask = nks ? 0b0100 : 0b0000;
+    nk &= nullmask; // overwrite bits
     nk |= st; // write new value/state
     *k = (u8)nk;  
   }
 
 #define GET_BIT(a, b) ((a >> b) & 1)
-#define SET_BIT(a, b, value) ((a) & (~(1 << (b)))) | ((value) & 1)
+#define SET_BIT(a, b, value) (((a) & (~(1 << (b)))) | (((value) & 1) << (b)))
 
   inline void
   ResetKeyStates(u8 *k) {
@@ -79,6 +84,8 @@ namespace _App_input_details {
     a &= (0b1100);
     *k = (u8)a;
   }
+#undef GET_BIT
+#undef SET_BIT
 }
 
 #define APP_KEY_COUNT (256)

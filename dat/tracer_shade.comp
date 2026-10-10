@@ -116,6 +116,10 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
       }
     }
     ray.Position = hit.HitPosition + ray.Direction * 0.003; // avoid self-shadowing
+    // if a particle, avoid another intersection with it
+    if ((m.Flags & TRACER_MATERIAL_FLAG_PARTICLE) != 0) {
+      ray.Position += (2.0 * TRACER_PARTICLE_RADIUS * ray.Direction);
+    }
   }
 
   rayColor *= clr;

@@ -80,7 +80,11 @@ namespace GPU {
     u32 BufferMaxAllocationCount;
     u32 ImageMaxAllocationCount;
 
-    u32 BumpAllocatorSize = MEGA(2);
+    u32 BumpAllocatorSizes[2] = { MEGA(118), MEGA(4) };
+
+    // Set to a more realistic number in an application that
+    // uses images
+    u32 ImageMemoryBlockSize = MEGA(88);
   };
 
   typedef u64 Timeline;
@@ -318,7 +322,6 @@ namespace GPU {
       ASSERT(this->BytesPushed <= this->Size, "GPU Bump alloc overflow!");
       return this->Base + cur;
     }
-    
   };
 
 #define MAX_COMMAND_BUFFER_COUNT (12)

@@ -13,20 +13,48 @@ layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 void main() {
   Sw_pcd data = Push.Data;
   uint raysPerPixel = 1 << data.RaysPerPixelPow2;
-  uint pixelMax = data.Dimensions.x * data.Dimensions.y;
   uint localPixelIdx = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * data.Dimensions.x;
   uint pixelIdx = (Push.Data.RayIdxOffset >> Push.Data.RaysPerPixelPow2) + localPixelIdx;
   uint localRayIdx = localPixelIdx * raysPerPixel;
+  uint rayIdx = Push.Data.RayIdxOffset + localRayIdx;
   if (localRayIdx >= Push.Data.RayCount) return;
   ivec2 imagePos = ivec2(pixelIdx % data.Dimensions.x, pixelIdx / data.Dimensions.x);
   RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
   vec3 accum = vec3(0.0);
-  for (uint i = 0; i < raysPerPixel; i++) {
-    vec3 rayClr = loadRayClrByIdx(rayBuffer, localRayIdx + i);
-    accum += rayClr;
+
+  // gather all samples
+  float weightSum = 0.0;
+  if (raysPerPixel > 1 && data.EnableCorrectReconstruction > 0) {
+    for (int x = -2; x < 3; x++) {
+      for (int y = -2; y < 3; y++) {
+	ivec2 off = ivec2(x, y) + imagePos;
+	if (any(lessThan(off, ivec2(0))) || any(greaterThanEqual(off, ivec2(data.Dimensions))))
+	  continue;
+	int thisLocalPixelIdx = int(localPixelIdx) + (x + y * int(data.Dimensions.x));
+	pixelIdx = int(Push.Data.RayIdxOffset >> Push.Data.RaysPerPixelPow2) + localPixelIdx;
+	if (pixelIdx < 0 || thisLocalPixelIdx >= (Push.Data.RayCount >> Push.Data.RaysPerPixelPow2)) continue;
+	for (int i = 0; i < raysPerPixel; i++) {
+	  localRayIdx = thisLocalPixelIdx * int(raysPerPixel) + i;
+	  rayIdx = int(Push.Data.RayIdxOffset) + localRayIdx;
+	  vec3 rayClr = loadRayClrByIdx(rayBuffer, localRayIdx);
+
+	  vec2 samplePos = imagePosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2, data.Hash.xy, data.EnableAntiAliasing, data.EnableStratifiedSampling);
+	  samplePos -= (vec2(imagePos) + 0.5); // make into relative position
+	  float w = mitchell2d(samplePos, 0.5, 1.0 / 3.0, 1.0 / 3.0);
+	  accum += rayClr * w;
+	  weightSum += w;
+	}
+      } 
+    }
+  } else {
+    for (uint i = 0; i < raysPerPixel; i++) {
+      vec3 rayClr = loadRayClrByIdx(rayBuffer, localRayIdx + i);
+      accum += rayClr;
+      weightSum += 1.0;
+    }
   }
-  accum = accum / raysPerPixel;
-  vec3 currentAccumClr = (imageLoad(_IMG, imagePos)).xyz;
+  accum = accum / weightSum;
+  vec3 currentAccumClr = data.AccumCount > 0.0 ? (imageLoad(_IMG, imagePos)).xyz : vec3(0.0);
   currentAccumClr += (accum - currentAccumClr) / (data.AccumCount + 1.0);
   imageStore(_IMG, imagePos, vec4(currentAccumClr, 1.0));
 

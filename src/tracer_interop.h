@@ -20,7 +20,7 @@ namespace Tracer {
 
 #define TRACER_USE_F16_COLOR (1)
 #define TRACER_MAX_CAMERA_VFOV (89.0f)
-
+#define TRACER_USE_PARTICLES (0)
   // program signals (abbrev. PS)
 #define TRACER_PS_NO_ACCUM_BIT (2)
 #define TRACER_PS_NO_AA_BIT (4)
@@ -30,6 +30,7 @@ namespace Tracer {
 #define TRACER_PS_NO_PDF_BIT (64)
 #define TRACER_PS_EXT_RESIZED_BIT (128)
 #define TRACER_PS_NO_RR_BIT (256) // russian roulette
+#define TRACER_PS_NO_CR_BIT (512) // correct reconstruction
   
 #define TRACER_RT_WORKGROUP_SIZE (64)
 #define TRACER_RT_COARSE_FACTOR (2)
@@ -82,12 +83,13 @@ namespace Tracer {
     float FocusDistance; // user
   };
 
-  struct Object {
-    float Transform[12]; // mat3x4, implicitly a mat4. row-major (!)
-    u32 Type;  // Sphere, mesh, etc
-    u32 Index; // MSB is not used, next 4 bits are type, remaining 27 are index into [type]buffer that contains data. type is not currently used.
+  struct Sphere_object {
+    //    float Transform[4]; // mat3x4, implicitly a mat4. row-major (!)
+    v4 PositionRadius;
+    //    u32 Type;  // Sphere, mesh, etc
+    //    u32 Index; // MSB is not used, next 4 bits are type, remaining 27 are index into [type]buffer that contains data. type is not currently used.
+    v3 ParticleNormal; // Used if the sphere is a particle (with a normal)
     u32 MaterialIndex; // Index into material buffer
-    u32 Padding[1]; // If Sphere, radius is stored in Transform
   };
 
   struct Ray {
@@ -141,6 +143,12 @@ namespace Tracer {
   // master material struct
 #define TRACER_MATERIAL_FLAG_METALLIC (1)
 #define TRACER_MATERIAL_FLAG_EMISSIVE (2)
+#if TRACER_USE_PARTICLES
+#define TRACER_MATERIAL_FLAG_PARTICLE (4)
+#else
+#define TRACER_MATERIAL_FLAG_PARTICLE (0)
+#endif
+#define TRACER_PARTICLE_RADIUS (0.025)  
   struct Material {
     v3 Color;
     float Roughness;
@@ -158,26 +166,9 @@ namespace Tracer {
     u32 Flags            [TRACER_MATERIAL_CHUNK_SIZE];
   };
 
-  /*  struct Mesh {
-    // (todo) implement
-
-      bvh4 GPUBVH;
-      uvec4 DataChannels;
-
-  };*/
-
-  struct Potential_hit_record {
-    //    x: u32 ObjectIndex;
-    //    y: u32 RayIndex;
-    //    z: u32 MaterialIndex;
-    //    w: padding
-    uv4 Data;
-  };
 
   struct Hit_record {
     v3 HitPosition;
-    //    u32 Data; // Material index, 0xffffffff means invalid hit record
-    //    v2 UV;
     v2 Normal;
   };
 
@@ -261,7 +252,13 @@ namespace Tracer {
 
     u32 RayIdxOffset;
     u32 RayCount;
-    u32 _PADDING[2];
+    u32 EnableAntiAliasing;
+    u32 EnableStratifiedSampling;    
+
+    uv4 Hash;
+
+    u32 EnableCorrectReconstruction;
+    u32 _PADDING[3];
   };
 
 #undef f16

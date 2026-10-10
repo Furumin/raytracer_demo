@@ -29,6 +29,29 @@
 
 GLOBAL_DESCRIPTORS
 
+float sinc(float x) {
+  x = abs(x); // sinc is even, so this is OK
+  return x < 1e-6 ? 1.0f : sin(x) / x;
+}
+
+
+float mitchell1d(float x, float B, float C) {
+  x = abs(2*x);
+  if (x >= 2.0) return 0.0;
+  if (x > 1) {
+    return ((-B - 6*C) * x*x*x + (6*B + 30*C) * x*x +
+	    (-12*B - 48*C) * x + (8*B + 24*C)) * (1.f/6.f);
+  } else {
+    return ((12 - 9*B - 6*C) * x*x*x + 
+	    (-18 + 12*B + 6*C) * x*x +
+	    (6 - 2*B)) * (1.f/6.f);
+  }
+}
+
+float mitchell2d(vec2 p, float invRad, float b, float c) {
+  return mitchell1d(p.x * invRad, b, c) * mitchell1d(p.y * invRad, b, c);
+}
+
 uint hash1(uint x) {
   x = ((x >> 16) ^ x) * 0x45d9f3bu;
   x = ((x >> 16) ^ x) * 0x45d9f3bu;
@@ -135,14 +158,18 @@ vec3 rotFromZPos(vec3 normal, vec3 v) {
 }
 
 vec2 randomDisk(uvec2 seeds) {
+  // randomFloatNorm is in [-1, 1], change to [0, 1]
   vec2 u = vec2(randomFloatNorm(seeds[0]), randomFloatNorm(seeds[1])) * 0.5 + 0.5;
   float a = 2 * u[0] - 1;
   float b = 2 * u[1] - 1;
+  if (a == 0.0 && b == 0.0)
+    return vec2(0.0);  
   float r, phi;
-  r = max(abs(a), abs(b));
   if (a*a > b*b) {
+    r = a;
     phi = (PI * 0.25) * (b / a);
   } else {
+    r = b;
     phi = (PI * 0.5) - (PI * 0.25) * (a / b);
   }
   return r * vec2(cos(phi), sin(phi));

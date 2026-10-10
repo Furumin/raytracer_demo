@@ -4,8 +4,8 @@
 
 // Defines
 #define APP_CPP_CODE (1)
-#define VULKAN_VALIDATE (1)
-#define DESC_POOL_DESC_CAPACITY (KILO(32))
+#define VULKAN_VALIDATE (0)
+#define DESC_POOL_DESC_CAPACITY (KILO(2))
 #define GPU_USE_IMGUI (1)
 
 // Permanent defines

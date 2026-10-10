@@ -909,16 +909,17 @@ namespace GPU {
   {
     VkBufferCreateInfo bci = {
       .sType = VKTYPE(BUFFER_CREATE_INFO),
-      .size = MEGA(64),
+      .size = MEGA(250),
       .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
     };
     VkBuffer hostAccessibleBuffer, deviceBuffer;
     vkCreateBuffer(this->Device, &bci, 0, &hostAccessibleBuffer);
-    bci.size = MEGA(512);
+    bci.size = MEGA(350);
     vkCreateBuffer(this->Device, &bci, 0, &deviceBuffer);
     VkBuffer buffers[2] = {hostAccessibleBuffer, deviceBuffer};
+    // (todo) a more intelligent strategy for choosing a host buffer !
     VkMemoryPropertyFlags necessaryFlags[2] = {
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     };
     VkDeviceMemory memories[2];
@@ -930,18 +931,27 @@ namespace GPU {
     Util::Stdlib_memory_alloc alloc;
     for (u32 i = 0; i < ARRAYCOUNT(buffers); i++) {
       vkGetBufferMemoryRequirements(this->Device, buffers[i], &memRequirements[i]);
-      i32 heapIndex = -1;
       i32 typeIndex = -1;
+      u64 curHeapSize = 0;
       // find appropriate memory type index
       for (u32 t = 0; t < physicalMemProperties.memoryTypeCount; t++) {
 	if ((physicalMemProperties.memoryTypes[t].propertyFlags & necessaryFlags[i]) == necessaryFlags[i]) {
-	  heapIndex = (i32)physicalMemProperties.memoryTypes[t].heapIndex;
-	  typeIndex = (i32)t;
+	  if (typeIndex > -1) {
+	    const u64 thisHeapSize = physicalMemProperties.memoryHeaps[physicalMemProperties.memoryTypes[typeIndex].heapIndex].size;
+	    if (thisHeapSize > curHeapSize) {
+	      typeIndex = (i32)t;
+	      curHeapSize = thisHeapSize;
+	    }
+	  } else {
+	    const u64 thisHeapSize = physicalMemProperties.memoryHeaps[physicalMemProperties.memoryTypes[t].heapIndex].size;
+	    typeIndex = (i32)t;
+	    curHeapSize = thisHeapSize;
+	  }
 	  break;
 	}
       }
 
-      if (heapIndex < 0 || typeIndex < 0) {
+      if (typeIndex < 0) {
 	Util::ErrMsgBox("Could not find any appropriate memory type on GPU!");
 	return -1;
       }
@@ -973,7 +983,7 @@ namespace GPU {
     // make image memory
     for (u32 i = 0; i < ARRAYCOUNT(this->ImageMasters); i++) {
       VkMemoryAllocateInfo allocInfo {VKTYPE(MEMORY_ALLOCATE_INFO)};
-      allocInfo.allocationSize = MEGA(512);
+      allocInfo.allocationSize = pParams->ImageMemoryBlockSize;
       allocInfo.memoryTypeIndex = (u32)this->BufferMasters[GPU_PRIVATE].MemoryTypeIndex;
       vkAllocateMemory(this->Device, &allocInfo, NULL, &this->ImageMasters[i].Memory);
       this->ImageMasters[i].Allocator = Memory::Virtual_allocator::Create(&alloc, pParams->ImageMaxAllocationCount, allocInfo.allocationSize);
@@ -1035,7 +1045,7 @@ namespace GPU {
   // bump allocators
   for (u32 i = 0; i < 2; i++) { // type
     for (u32 j = 0; j < 2; j++) { // frame index
-      u32 siz = ALIGN(pParams->BumpAllocatorSize, BUMP_ALLOC_ALIGNMENT);
+      u32 siz = ALIGN(pParams->BumpAllocatorSizes[i], BUMP_ALLOC_ALIGNMENT);
       this->BumpAllocs[i][j].Base = Malloc(siz, (Buffer_type)i);
       this->BumpAllocs[i][j].Size = siz;
       this->BumpAllocs[i][j].BytesPushed = 0;      
@@ -1067,7 +1077,6 @@ namespace GPU {
       Util::Platform_memory_alloc allocator;
       cmdBufStack->Free(&allocator);
     }
-    this->ScratchArena.Free();
     {
       Util::Stdlib_memory_alloc alloc;
       this->ImagePool.Free(&alloc);
@@ -1782,7 +1791,11 @@ namespace GPU {
 
   void
   WaitIdle() {
-    const Ctx *ctx = &gCtx;
+    Ctx *ctx = &gCtx;
     vkDeviceWaitIdle(ctx->Device);
+    ctx->BumpAllocs[0][0].Reset();
+    ctx->BumpAllocs[0][1].Reset();
+    ctx->BumpAllocs[1][0].Reset();
+    ctx->BumpAllocs[1][1].Reset();
   }
 }

@@ -26,7 +26,7 @@ layout(std430, buffer_reference, buffer_reference_align = 16) readonly buffer Bv
   Bvh2 Data[];
 };
 layout(std430, buffer_reference, buffer_reference_align = 16) readonly buffer ObjectBuffer {
-  Object Data[];
+  Sphere_object Data[];
 };
 vec3 getRayMax(in Ray r) {
   return r.Position + r.Direction * r.T;
@@ -86,6 +86,36 @@ layout (std430, buffer_reference, buffer_reference_align = 16) readonly buffer B
 ivec2 imagePixelPosFromRayIdx(in uint rayIdx, in uvec2 imageDim, in uint raysPerPixelPow2) {
   uint pixelIndex = rayIdx >> raysPerPixelPow2; // same as division by raysPerPixel
   return ivec2(pixelIndex % imageDim.x, pixelIndex / imageDim.x);
+}
+
+vec2 imagePosFromRayIdx(in uint rayIdx, in uvec2 imageDim, in uint raysPerPixelPow2, in uvec2 hash, in uint enableAntiAliasing, in uint enableStratifiedSampling) {
+  vec2 imagePos = vec2(imagePixelPosFromRayIdx(rayIdx, imageDim, raysPerPixelPow2));
+  uint sampleI = rayIdx & raysPerPixelPow2;
+    
+  // slightly different sub-pixel pos per sample
+  vec2 offset = vec2(0.0);
+  offset.x = enableAntiAliasing > 0 ?
+    0.5 * (randomFloatNorm(hash.x + sampleI)) : 0;
+  offset.y = enableAntiAliasing > 0 ?
+    0.5 * (randomFloatNorm(hash.y + sampleI)) : 0;
+  if (enableStratifiedSampling == 0) {
+  } else {
+    // determine grid size
+    // (note) should ideally be in CPU, but this operation is so cheap that
+    // practically no harm is done by leaving it here
+    uint shiftX = ((raysPerPixelPow2 + 1) >> 1);
+    uint tileXCount = 1 << shiftX;
+    uint tileYCount = 1 << ((raysPerPixelPow2) >> 1);
+    uint x = sampleI % tileXCount;
+    uint y = sampleI >> shiftX;
+    float tileW = 1.0 / tileXCount, tileH = 1.0 / tileYCount;
+
+    offset *= vec2(tileW, tileH);
+    offset.x += (x * tileW);
+    offset.y += (y * tileH);
+  }
+  imagePos += offset;
+  return imagePos;
 }
 
 void getRayChunkIdx(in uint rayIdx, out uint chunkIdx, out uint idxInChunk) {
@@ -260,7 +290,7 @@ bool sphereHit(in Ray ray, in Sphere s, out float tMin) {
 
 // with code from
 // https://github.com/jbikker/tinybvh/blob/dev/kernels/traverse_bvh2.cl
-bool hitClosest(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex) {
+bool hitClosest(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uint objId, out float tMin, out vec3 hitSphereCenter, out uint materialIndex, out vec3 norm) {
   const vec3 rD = 1.0 / ray.Direction;
   const vec3 rO = ray.Position * -rD;
   float hit = ray.T;
@@ -273,12 +303,18 @@ bool hitClosest(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, out uin
       // found hit! this BVH only contains spheres, so no need to check type
       uint thisObjId = nodeIdx & 0xffffff;
       Sphere s;
-      s.Position = vec3(objBuffer.Data[thisObjId].Transform[3], objBuffer.Data[thisObjId].Transform[7], objBuffer.Data[thisObjId].Transform[11]);
-      s.Radius = objBuffer.Data[thisObjId].Transform[0];
+      s.Position = objBuffer.Data[thisObjId].PositionRadius.xyz;
+      s.Radius = objBuffer.Data[thisObjId].PositionRadius.w;
       float t;
       bool h = sphereHit(ray, s, t);
       if (h && t < hit) {
 	hit = t;
+	norm = normalize(ray.Position + ray.Direction * t - s.Position);
+#if TRACER_USE_PARTICLES
+	if (dot(objBuffer.Data[thisObjId].ParticleNormal, objBuffer.Data[thisObjId].ParticleNormal) > 1e-6) {
+	  norm = objBuffer.Data[thisObjId].ParticleNormal;
+	}
+#endif 
 	objId = thisObjId;
 	hitSphereCenter = s.Position;
 	materialIndex = objBuffer.Data[thisObjId].MaterialIndex;
@@ -327,8 +363,8 @@ bool hitAny(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in Ray ray, bool disqua
       // found hit! this BVH only contains spheres, so no need to check type
       uint thisObjId = nodeIdx & 0xffffff;
       Sphere s;
-      s.Position = vec3(objBuffer.Data[thisObjId].Transform[3], objBuffer.Data[thisObjId].Transform[7], objBuffer.Data[thisObjId].Transform[11]);
-      s.Radius = objBuffer.Data[thisObjId].Transform[0];
+      s.Position = objBuffer.Data[thisObjId].PositionRadius.xyz;
+      s.Radius = objBuffer.Data[thisObjId].PositionRadius.w;
       float t;
       bool h = sphereHit(ray, s, t);
       // (todo) use disqualifyAlpha!
@@ -379,8 +415,8 @@ bool hitAny(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in vec3 rayPos, in vec3
       // found hit! this BVH only contains spheres, so no need to check type
       uint thisObjId = nodeIdx & 0xffffff;
       Sphere s;
-      s.Position = vec3(objBuffer.Data[thisObjId].Transform[3], objBuffer.Data[thisObjId].Transform[7], objBuffer.Data[thisObjId].Transform[11]);
-      s.Radius = objBuffer.Data[thisObjId].Transform[0];
+      s.Position = objBuffer.Data[thisObjId].PositionRadius.xyz;
+      s.Radius = objBuffer.Data[thisObjId].PositionRadius.w;
       float t;
       bool h = sphereHit(rayPos, rayDir, s.Position, s.Radius, rayTMax, t);
       // (todo) use disqualifyAlpha!
@@ -416,3 +452,4 @@ bool hitAny(BvhBuffer bvhBuffer, ObjectBuffer objBuffer, in vec3 rayPos, in vec3
   }
   return hit < rayTMax;
 }
+

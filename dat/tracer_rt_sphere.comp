@@ -19,35 +19,10 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   // intersect passes, e.g. against triangles
   if (data.Depth == 0) {
     // populate ray buffer, default hit records
-    vec2 imagePixelPos = vec2(imagePixelPosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2));
-    uint rayI = rayIdx & data.RaysPerPixelPow2;
     float defocusRad = c.FocusDistance * tan(degToRad(c.DefocusAngle * 0.5));
-    vec2 defocus = defocusRad * randomDisk(data.Hash.xy); 
+    vec2 defocus = defocusRad * randomDisk(data.Hash.wz); 
     ray.Position = c.Position + defocus.x * c.Right + defocus.y * c.Up;
-    
-    // slightly different sub-pixel pos per sample
-    vec2 offset = vec2(0.0);
-    offset.x = Push.Data.EnableAntiAliasing > 0 ?
-      0.5 * (randomFloatNorm(data.Hash.x + rayI)) : 0;
-    offset.y = Push.Data.EnableAntiAliasing > 0 ?
-      0.5 * (randomFloatNorm(data.Hash.y + rayI)) : 0;
-    if (data.EnableStratifiedSampling == 0) {
-    } else {
-      // determine grid size
-      // (note) should ideally be in CPU, but this operation is so cheap that
-      // practically no harm is done by leaving it here
-      uint shiftX = ((data.RaysPerPixelPow2 + 1) >> 1);
-      uint tileXCount = 1 << shiftX;
-      uint tileYCount = 1 << ((data.RaysPerPixelPow2) >> 1);
-      uint x = rayI % tileXCount;
-      uint y = rayI >> shiftX;
-      float tileW = 1.0 / tileXCount, tileH = 1.0 / tileYCount;
-
-      offset *= vec2(tileW, tileH);
-      offset.x += (x * tileW);
-      offset.y += (y * tileH);
-    }
-    imagePixelPos += offset;
+    vec2 imagePixelPos = imagePosFromRayIdx(rayIdx, data.Dimensions, data.RaysPerPixelPow2, data.Hash.xy, data.EnableAntiAliasing, data.EnableStratifiedSampling);
     ray.Direction = rayDirFromPixelPos(c, imagePixelPos) - ray.Position;
     ray.Data = 0;
   } else {
@@ -64,13 +39,13 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   vec3 sphereCenter;
   uint materialIndex;
   uint objId = 0x80000000; // invalid object ID
-  if (hitClosest(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex)) {
+  vec3 normal;
+  if (hitClosest(bvhBuffer, objectBuffer, ray, objId, tMin, sphereCenter, materialIndex, normal)) {
     ray.T = tMin;
     // increment depth
     rayDepth++;
     h.HitPosition = ray.Position + ray.Direction * ray.T;
     // compress normal by omitting .z and storing its sign in .y LSB
-    vec3 normal = normalize(h.HitPosition - sphereCenter);
     const float zSign = sign(normal.z);
     uint nY = floatBitsToUint(normal.y);
     nY &= (~1);

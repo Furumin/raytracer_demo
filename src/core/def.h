@@ -17,13 +17,12 @@ typedef int64_t i64;
 #define GIGA(a) ((a) * 1024 * 1024 * 1024)
 
 // Helpers
-#if FLAG_GCC_DEBUG
 #include <cassert>
 #define ASSERT(exp, msg) do {if (!(exp)) { _assert((msg), __FILE__, __LINE__); }} while (0)
+#if FLAG_GCC_DEBUG
 #define DEBUGLOG(...) do {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); } while (0)
 #else
 #include <stdlib.h>
-#define ASSERT(...)
 #define DEBUGLOG(...) 
 #endif
 

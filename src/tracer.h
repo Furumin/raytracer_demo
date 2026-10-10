@@ -26,11 +26,12 @@ namespace Tracer {
   struct Object_buffers_create_param {
     Material *Materials;
     u32 MaterialCount;
-    u32 *SphereMaterialIndices;
-    void *SpherePositions; // vec3
-    u32 SpherePositionStride = sizeof (v3); // defa
-    void *SphereRadii; // float
-    u32 SphereRadiusStride = sizeof (float);
+    //    u32 *SphereMaterialIndices;
+    //    void *SpherePositions; // vec3
+    //    u32 SpherePositionStride = sizeof (v3); // defa
+    //    void *SphereRadii; // float
+    //    u32 SphereRadiusStride = sizeof (float);
+    Sphere_object *Spheres;
     u32 SphereCount;
   };
 
@@ -110,6 +111,11 @@ namespace Tracer {
     PollEditor(const Editor_params &params);
     void
     RenderEditor(GPU::Image *pSwapchainImg, const GPU::Cmd_buf *pCmdBuf);
+    
+    // pBuffer == 0 => dont write, just write vertex count in pCountWritten
+    void
+    LoadObjFile(const void *dataBuffer, const u64 dataBufferSize,
+		Sphere_object *pBuffer, const u32 bufferCapacity, u32 *pVertexCount);
   public:
     void
     UpdateInputs(const App_input *pNewState);
