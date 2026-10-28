@@ -17,7 +17,8 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   // (todo) potentially move ray generation to separate pass ( or keep it here,
   // but assert that this intersect pass executed first ) in case we have more
   // intersect passes, e.g. against triangles
-  if (data.Depth == 0) {
+  const uint passDepth = uint(data.DepthAndFlags >> 16);
+  if (passDepth == 0) {
     // populate ray buffer, default hit records
     float defocusRad = c.FocusDistance * tan(degToRad(c.DefocusAngle * 0.5));
     vec2 defocus = defocusRad * randomDisk(data.Hash.wz); 
@@ -32,7 +33,7 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   ray.T = FLOAT_INF;
       
   uint rayDepth = ray.Data >> 27;
-  if (rayDepth != data.Depth) return true;
+  if (rayDepth != passDepth) return true;
 
   float tMin = -FLOAT_INF;
   ObjectBuffer objectBuffer = ObjectBuffer(data.Buffers[RT_PCD_OBJ_BUF]);
@@ -58,7 +59,7 @@ bool rtSphereKernel(in uint rayIdx, in uint localRayIdx) {
   // pack metadata into ray
   ray.Data = (rayDepth << TRACER_DEPTH_O) | ((materialIndex) << TRACER_MATERIAL_O) | (ray.Data & 3);
   storeRayByIdx(rayBuffer, localRayIdx, ray, false);
-  if (data.Depth == 0) {
+  if (passDepth == 0) {
     storeRayClrByIdx(rayBuffer, localRayIdx, vec3(1.0));
   }
   storeHitByIdx(rayBuffer, localRayIdx, h);

@@ -41,7 +41,7 @@ namespace Tracer {
 #define RT_PCD_TLAS_BUF (1)
 #define RT_PCD_OBJ_BUF (2)
 #define RT_PCD_HIT_BUF (3)
-#define RT_PCD_CNT_BUF (4)
+#define RT_PCD_MAT_BUF (4)
 
 #define TRACER_OBJ_INDEX_BIT_COUNT (27)
 #define TRACER_OBJ_TYPE_BIT_COUNT (4)
@@ -195,51 +195,34 @@ namespace Tracer {
     u32 _Padding2[1];
   };
 
+  /*
+    Note the unused fields; some of them are in Rs_pcd.
+    These are left over from a test to check whether a megakernel would be a wiser approach.
+    Instead, such a kernel ended up reducing FPS by around 10.
+   */
   struct Rt_pcd {
     uv4 Hash;
-    
-    u64 CameraPointer;
-    u32 Signals; // unused
-    u32 RayIdxOffset;
     
     uv2 Dimensions;
     u32 RaysPerPixelPow2;
     u32 RayCount; // Total ray count
     
     u64 Buffers[5];
-    u64 _PADDING1[1];
-    
-    u32 Depth; // If MSB is asserted, populate ray buffers
+    u64 CameraPointer;
+
+    u32 RayIdxOffset;
     u32 EnableAntiAliasing;
     u32 EnableStratifiedSampling;
-    u32 _PADDING2[1];
+    u32 DepthAndFlags; // high 16 are depth, LSB is 1 if last bounce, bit [1] is 1 if importance sampling is ON
+    
+    v4 SkyColor;
+
+    v4 SunData; // hard-coded emissive
+    
   };
 
 #define TRACER_RS_LAST_BOUNCE_BIT (1)
 #define TRACER_RS_NO_PDF_BIT (2)
-  // shading
-  struct Rs_pcd {
-    uv4 Hash;
-    
-    uv2 Dimensions;
-    u32 ImageStorageHandle; // unused
-    u32 RayIdxOffset;
-
-    float Hyst; // unused
-    u32 DepthAndFlags; // high 16 are depth, LSB is 1 if last bounce, bit [1] is 1 if importance sampling is ON
-    u32 RayCount;
-    u32 RaysPerPixelPow2;
-
-    u64 HitBuffer;
-    u64 MaterialBuffer;
-    u64 RayBuffer;
-    // include even if unused 
-    u64 GlobalCountBuffer;
-
-    v4 SkyColor;
-
-    v4 SunData; // hard-coded emissive
-  };
 
   struct Sw_pcd {
     uv2 Dimensions;

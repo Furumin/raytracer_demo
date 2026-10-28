@@ -8,32 +8,32 @@
 
 // builtin math
 namespace bm {
-  inline float sinf(const float rad) {
+  inline float sin(const float rad) {
 #if __GNUC__
     return __builtin_sin(rad);
 #elif _MSC_VER
     return sinf(rad);
 #endif
   }
-  inline float cosf(const float rad) {
+  inline float cos(const float rad) {
 #if __GNUC__
     return __builtin_cos(rad);
 #elif _MSC_VER
     return cosf(rad);
 #endif
   }
-  inline float tanf(const float rad) {
+  inline float tan(const float rad) {
 #if __GNUC__
     return __builtin_tan(rad);
 #elif _MSC_VER
     return tanf(rad);
 #endif
   }
-  inline float sqrtf(const float val) {
+  inline float sqrt(const float val) {
 #if __GNUC__
     return __builtin_sqrt(val);
 #elif _MSC_VER
-    return sqrtf(rad);
+    return sqrtf(val);
 #endif
   }
 }
@@ -114,7 +114,7 @@ dot(const v3 a, const v3 b) {
 }
 inline v3
 norm(const v3 v) {
-  float len = bm::sqrtf(dot(v, v));
+  float len = bm::sqrt(dot(v, v));
   if (len < 0.000001f) return {};
   float invl = 1.0 / len;
   return v * invl;
@@ -269,12 +269,12 @@ nquatinv(const quat q)
 inline quat
 quatangleaxis(const float angle, const v3 axis) {
   v3 n = norm(axis);
-  float s = bm::sinf(angle * 0.5f);
+  float s = bm::sin(angle * 0.5f);
   quat q;
   q.x = n.x * s;
   q.y = n.y * s;
   q.z = n.z * s;
-  q.w = bm::cosf(angle * 0.5f);
+  q.w = bm::cos(angle * 0.5f);
   return q;
 }
 

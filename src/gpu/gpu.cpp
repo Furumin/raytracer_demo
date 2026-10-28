@@ -695,7 +695,7 @@ namespace GPU {
   float queuePriority = 1.0f;
   VkDeviceQueueCreateInfo queueCreateInfo[ARRAYCOUNT(indices.Indices)];
   for (i32 i = 0; i < effectiveCount; i++) {
-    queueCreateInfo[i]	= (VkDeviceQueueCreateInfo) {
+    queueCreateInfo[i]	= {
       .sType		= VKTYPE(DEVICE_QUEUE_CREATE_INFO),
       .queueFamilyIndex = (u32)effectiveIndices[i],
       .queueCount	= 1,

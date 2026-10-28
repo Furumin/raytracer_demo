@@ -197,7 +197,7 @@ struct Scoped_lock {
     InterlockedExchange((long volatile*)(&Lock->Lock), 0);
   }
 
-  inline operator=(Scoped_lock &r) = delete;
+  inline Scoped_lock& operator=(Scoped_lock &r) = delete;
   inline Scoped_lock(Scoped_lock &&r) = delete;
   inline Scoped_lock(Scoped_lock &r) = delete;
 };

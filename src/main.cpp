@@ -27,7 +27,11 @@
 #define NO_CUSTOM_GEOMETRY
 #define NO_VOXEL_SUPPORT
 #define NO_THREADED_BUILDS
+#if _MSC_VER
+#define TINYBVH_IMPLEMENTATION (1)
+#endif
 #include "ext/bvh/tiny_bvh.h"
+
 
 // imgui
 #if GPU_USE_IMGUI

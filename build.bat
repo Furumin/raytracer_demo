@@ -18,6 +18,6 @@ set vulkanlibpath=lib
 set supresslinkerwarning=-Wl,--disable-stdcall-fixup -Wl,--enable-stdcall-fixup
 echo Compiling...
 set "imguilink=out/imgui/imgui.o out/imgui/imgui_draw.o out/imgui/imgui_impl_vulkan.o out/imgui/imgui_impl_win32.o out/imgui/imgui_tables.o out/imgui/imgui_widgets.o"
-g++ %flags% -mavx2 -mfma -std=c++17 src/main.cpp out/bvh.o %imguilink% -finput-charset=UTF-8 -mwindows -o app.exe -Isrc/ext/imgui/ -L%vulkanlibpath% -lvulkan-1 -lWinmm -lkernel32 -ldwmapi
+g++ %flags% -mavx2 -mfma -std=c++17 src/main.cpp out/bvh.o %imguilink% -finput-charset=UTF-8 -fexec-charset=UTF-8 -mwindows -o app.exe -Isrc/ext/imgui/ -L%vulkanlibpath% -lvulkan-1 -lWinmm -lkernel32 -ldwmapi
 echo Done.
 

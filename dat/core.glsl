@@ -165,7 +165,7 @@ vec2 randomDisk(uvec2 seeds) {
   if (a == 0.0 && b == 0.0)
     return vec2(0.0);  
   float r, phi;
-  if (a*a > b*b) {
+  if (abs(a) > abs(b)) {
     r = a;
     phi = (PI * 0.25) * (b / a);
   } else {

@@ -18,7 +18,12 @@ typedef int64_t i64;
 
 // Helpers
 #include <cassert>
-#define ASSERT(exp, msg) do {if (!(exp)) { _assert((msg), __FILE__, __LINE__); }} while (0)
+#if _MSC_VER
+#define ASSERT_FUNC(a, b, c) assert((a))
+#else
+#define ASSERT_FUNC(a, b, c) _assert((a), (b), (c))
+#endif
+#define ASSERT(exp, msg) do {if (!(exp)) { ASSERT_FUNC((msg), __FILE__, __LINE__); }} while (0)
 #if FLAG_GCC_DEBUG
 #define DEBUGLOG(...) do {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); } while (0)
 #else

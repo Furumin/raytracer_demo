@@ -2,16 +2,16 @@
 #include "core.glsl"
 #include "tracer_core.glsl"
 layout(std430, push_constant) uniform Push_T {
-  Rs_pcd Data;
+  Rt_pcd Data;
 } Push;
 layout(local_size_x = TRACER_RS_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 #define STOP_TRACING_RAY() ray.Data &= ~(TRACER_MAX_DEPTH << TRACER_DEPTH_O)
 void kernel(in uint rayIdx, in uint localRayIdx) {
-  const Rs_pcd data = Push.Data;
+  const Rt_pcd data = Push.Data;
   if (localRayIdx >= data.RayCount) return;
-  RayChunkBuffer rayBuffer = RayChunkBuffer(data.RayBuffer);
+  RayChunkBuffer rayBuffer = RayChunkBuffer(data.Buffers[RT_PCD_RAY_BUF]);
+  MaterialChunkBuffer materialBuffer = MaterialChunkBuffer(data.Buffers[RT_PCD_MAT_BUF]);
   Hit_record hit = loadHitByIdx(rayBuffer, localRayIdx);
-  MaterialChunkBuffer materialBuffer = MaterialChunkBuffer(data.MaterialBuffer);
   vec3 clr = data.SkyColor.xyz;
   Ray ray = loadRayByIdx(rayBuffer, localRayIdx, false);
   vec3 rayColor = loadRayClrByIdx(rayBuffer, localRayIdx);
@@ -134,6 +134,7 @@ void kernel(in uint rayIdx, in uint localRayIdx) {
 }
 
 void main() {
+  //  return;
   const uint stride = (Push.Data.RayCount + TRACER_RS_COARSE_FACTOR - 1) / TRACER_RS_COARSE_FACTOR;
   if (gl_GlobalInvocationID.x >= stride) return;
   for (uint i = 0; i < TRACER_RS_COARSE_FACTOR; i++) {

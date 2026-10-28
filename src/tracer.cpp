@@ -111,7 +111,7 @@ namespace Tracer {
     
     mCamera.AspectRatio = (float)mCamera.PixelWidth / (float)mCamera.PixelHeight;
     float th = mCamera.VFov;
-    float h = bm::tanf(th);
+    float h = bm::tan(th);
     float vpH = 2 * h * mCamera.FocusDistance;
     float vpW = mCamera.AspectRatio * vpH;
     v3 cameraRight = quatrotv3(mCameraQuat, {1, 0, 0});
@@ -291,6 +291,9 @@ namespace Tracer {
     mCamera.FocusDistance = 10.0f;
     ReinitCamera(imgDim);
     mProgramSignals |= TRACER_PS_NO_ACCUM_BIT;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.FontDefault = io.Fonts->AddFontFromFileTTF("dat/NotoSansJP-Regular.ttf", 16.0f);
   }
 
   bool
@@ -375,49 +378,51 @@ namespace Tracer {
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
     ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), maximumWindowHeight), ImGuiCond_Once);
     ImGui::Begin("Editor");
-    if (ImGui::CollapsingHeader("Controls")) {
-      ImGui::Text("WASD: Move");
-      ImGui::Text("SHIFT/SPACE: Move vertically");
-      ImGui::Text("Right mouse: Rotate");
+    if (ImGui::CollapsingHeader(GetLabel(CONTROLS))) {
+      ImGui::Text(GetLabel(CONTROLS_MOVE));
+      ImGui::Text(GetLabel(CONTROLS_V_MOVE));
+      ImGui::Text(GetLabel(CONTROLS_ROTATE));
     }
-    ImGui::SeparatorText("Stats");
+    ImGui::SeparatorText(GetLabel(STATS));
     {
       // debug button status
       ImGui::PushItemWidth(ImGui::GetFontSize() * 8.0f);
-      ImGui::Text("Tick count / Since last accum started: %llu / %llu", mTickCount, (u64)mAccumSamplesCount);
-      ImGui::Text("Accumulated samples per pixel: %u", ((u32)mAccumSamplesCount) << mRaysPerPixelPow2);
+      ImGui::Text(GetLabel(TICK_COUNTS), mTickCount, (u64)mAccumSamplesCount);
+      ImGui::Text(GetLabel(ACCUM_SPP), ((u32)mAccumSamplesCount) << mRaysPerPixelPow2);
       const uv4 thisFrameHash = GetHash(mTickCount, mMaxDepth, 0);
-      ImGui::Text("This frame's hash (at depth 0): { %u, %u, %u, %u }", thisFrameHash.x, thisFrameHash.y, thisFrameHash.z, thisFrameHash.w);
-      ImGui::Text("Swapchain dim.: %u, %u", swapchainDim.x, swapchainDim.y);
-      ImGui::Text("Framebuffer dim.: %u, %u", fbDim.x, fbDim.y);
+      ImGui::Text(GetLabel(FRAME_HASH), thisFrameHash.x, thisFrameHash.y, thisFrameHash.z, thisFrameHash.w);
+      ImGui::Text(GetLabel(SC_DIM), swapchainDim.x, swapchainDim.y);
+      ImGui::Text(GetLabel(FB_DIM), fbDim.x, fbDim.y);
       if (mStartTime && mEndTime > mStartTime) {
 	double t = GPU::GetMicrosecondsElapsed(mStartTime, mEndTime);
 	mAccumTime += t;
 	mAccumTimeCounts += 1.0;
 	double avg = mAccumTime / mAccumTimeCounts;
-	ImGui::Text("Ray count / Ray buffer capacity : %u / %u", params.RayCountThisFrame, params.RayCapacity);
-	ImGui::Text("Frame time (microsecs) / FPS: %.2f / %.2f", avg, (1000000.0) / avg);
+	ImGui::Text(GetLabel(RAY_COUNT), params.RayCountThisFrame, params.RayCapacity);
+	ImGui::Text(GetLabel(FRAME_TIME), avg, (1000000.0) / avg);
       }
       if (ShouldEnablePartialRendering(params.TotalRayCount, params.RayCapacity)) {
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.99f, 1.0f, 0.1f, 1.0f));
-	ImGui::Text("WARNING: Partial rendering is currently on.");
+	ImGui::Text(GetLabel(WARNING));
 	ImGui::PopStyleColor(1);
       }
       ImGui::PopItemWidth();
-      ImGui::SeparatorText("Camera");
-      ImGui::PushItemWidth(MIN(ImGui::GetContentRegionAvail().x * 0.6f, 80.0f));
-      ImGui::Text("Position: {%.2f, %.2f, %.2f}", mCamera.Position.x, mCamera.Position.y, mCamera.Position.z);
-      float degvfov = DegFromRad(mCamera.VFov);
-      resetColorAccum |= ImGui::InputFloat("Vertical FOV", &degvfov, 0.1f, 1.0f, "%.1f");
-      float newVFov = MIN(RadFromDeg(degvfov), TRACER_MAX_CAMERA_VFOV);
-      if (abs(newVFov - mCamera.VFov) > FLOAT_EPS) {
-	mCamera.VFov = newVFov;
-	ReinitCamera(fbDim);
+      ImGui::SeparatorText(GetLabel(CAMERA));
+      {
+	ImGui::PushItemWidth(MIN(ImGui::GetContentRegionAvail().x, 140.0f));
+	ImGui::Text(GetLabel(CAM_POS), mCamera.Position.x, mCamera.Position.y, mCamera.Position.z);
+	float degvfov = DegFromRad(mCamera.VFov);
+	resetColorAccum |= ImGui::InputFloat(GetLabel(VFOV), &degvfov, 0.1f, 1.0f, "%.1f");
+	float newVFov = MIN(RadFromDeg(degvfov), TRACER_MAX_CAMERA_VFOV);
+	if (abs(newVFov - mCamera.VFov) > FLOAT_EPS) {
+	  mCamera.VFov = newVFov;
+	  ReinitCamera(fbDim);
+	}
+	resetColorAccum |= ImGui::InputFloat(GetLabel(FOCUS_DISTANCE), &mCamera.FocusDistance, 0.1f, 1.0f, "%.1f");
+	resetColorAccum |= ImGui::InputFloat(GetLabel(DEFOCUS_ANGLE), &mCamera.DefocusAngle, 0.01f, 0.1f);
       }
-      resetColorAccum |= ImGui::InputFloat("Focus distance", &mCamera.FocusDistance, 0.1f, 1.0f, "%.1f");
-      resetColorAccum |= ImGui::InputFloat("Defocus angle (deg)", &mCamera.DefocusAngle, 0.01f, 0.1f);
     }
-    ImGui::SeparatorText("Other");
+    ImGui::SeparatorText(GetLabel(OTHER));
     {
       u32 bits[] = {
 	TRACER_PS_NO_ACCUM_BIT,
@@ -428,17 +433,17 @@ namespace Tracer {
 	TRACER_PS_NO_CR_BIT
       };
       const char* names[] = {
-	"color accumulation",
-	"anti-aliasing",
-	"stratified sampling",
-	"importance sampling",
-	"russian roulette",
-	"correct reconstruction"
+	GetLabel(COLOR_ACCUMULATION),
+	GetLabel(ANTI_ALIASING),
+	GetLabel(STRATIFIED_SAMPLING),
+	GetLabel(IMPORTANCE_SAMPLING),
+	GetLabel(RUSSIAN_ROULETTE),
+	GetLabel(CORRECT_RECONSTRUCTION)
       };
       char buf[1024];
       for (u32 i = 0; i < ARRAYCOUNT(bits); i++) {
 	bool status = mPermanentProgramSignals & bits[i];
-	sprintf(buf, "Turn off %s", names[i]);
+	sprintf(buf, GetLabel(TURN_OFF), names[i]);
 	ImGui::Checkbox(buf, &status);
 	u32 m = mPermanentProgramSignals;
 	mPermanentProgramSignals = status ? (mPermanentProgramSignals | bits[i]) : (mPermanentProgramSignals & ~(bits[i]));
@@ -446,7 +451,7 @@ namespace Tracer {
 	  resetColorAccum = resetTimer = true;
       }
       i32 d = mMaxDepth;
-      resetTimer |= ImGui::SliderInt("Depth", &d, 0, TRACER_MAX_DEPTH);
+      resetTimer |= ImGui::SliderInt(GetLabel(MAX_DEPTH), &d, 0, TRACER_MAX_DEPTH);
       mMaxDepth = d;
       d = mRaysPerPixelPow2;
       bool changeSPP = ImGui::SliderInt("SPP (pow 2)", &d, 0, 8);
@@ -455,9 +460,9 @@ namespace Tracer {
       resetTimer |= changeSPP;
       resetColorAccum |= changeSPP;
       d = mFrameBufferInvRelSizePow2;
-      bool changeDim = ImGui::SliderInt("Framebuffer size rel. window (pow 2)", &d, 0, 4);
+      bool changeDim = ImGui::SliderInt(GetLabel(FB_SIZE_REL_WINDOW), &d, 0, 4);
       ImGui::PopItemWidth();
-      resetColorAccum |= ImGui::InputFloat3("Sky color", mSkyColor.v);
+      resetColorAccum |= ImGui::InputFloat3(GetLabel(SKY_COLOR), mSkyColor.v);
       mFrameBufferInvRelSizePow2 = d;
       if (changeDim) {
 	GPU::WaitIdle();
@@ -487,6 +492,11 @@ namespace Tracer {
       }, {}, GPU::GetSwapchainDim());
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pCmdBuf->CommandBuffer);
     pCmdBuf->EndRendering();
+  }
+
+  const char*
+  World::GetLabel(const LABEL_ID labelId) {
+    return LabelDB[Language].Labels[MIN((u32)labelId, ARRAYCOUNT(LabelDB[0].Labels))];
   }
 
   void
@@ -578,21 +588,28 @@ namespace Tracer {
     for (u32 i = 0; i < maxDepth; i++) {
       const uv4 hash = GetHash(mTickCount, maxDepth, i);
       pCmdBuf->SetKernel(mSphereTestKernel);
+      const u32 depthAndFlags =
+	(i << 16) |
+	(i == maxDepth - 1 ? TRACER_RS_LAST_BOUNCE_BIT : 0) |
+	((mProgramSignals & TRACER_PS_NO_PDF_BIT) ? TRACER_RS_NO_PDF_BIT : 0) |
+	((mProgramSignals & TRACER_PS_NO_RR_BIT) ? TRACER_PS_NO_RR_BIT : 0);
       Rt_pcd rt = {
 	.Hash = hash,
-	.CameraPointer = camP.Gpu(),
-	.Signals = 0,
-	.RayIdxOffset = rayIdxOffset,
 	.Dimensions = imageDim,
 	.RaysPerPixelPow2 = raysPerPixelPow2,
 	.RayCount = effRayCount,
-	.Depth = i,
+	.CameraPointer = camP.Gpu(),
+	.RayIdxOffset = rayIdxOffset,
 	.EnableAntiAliasing = aaOn,
-	.EnableStratifiedSampling = ssOn
+	.EnableStratifiedSampling = ssOn,
+	.DepthAndFlags = depthAndFlags
       };
       rt.Buffers[RT_PCD_RAY_BUF] = rayBufferPointer;
       rt.Buffers[RT_PCD_TLAS_BUF] = mObjectBuffers.GPUTLAS[Object_type::SPHERE].Gpu();
       rt.Buffers[RT_PCD_OBJ_BUF] = mObjectBuffers.ObjectBuffer.Gpu();
+      rt.Buffers[RT_PCD_MAT_BUF] = mObjectBuffers.MaterialBuffer.Gpu();
+      rt.SkyColor = mSkyColor;
+      rt.SunData = mSunData;
       // work group count
       uv3 wgc;
       // rays per thread
@@ -604,31 +621,13 @@ namespace Tracer {
       wgc.z = 1;
       pCmdBuf->PushConstants(&rt);
       pCmdBuf->Dispatch(wgc);
-      // shading pass has a different format for depth, due to needing to determine
-      // if a ray terminated without hitting light or not 
-      Rs_pcd rs = {
-	.Hash = hash,
-	.Dimensions = imageDim,
-	.RayIdxOffset = rayIdxOffset,
-	// high 16 are depth, LSB is last bounce flag
-	.DepthAndFlags = (i << 16) |
-  	  (i == maxDepth - 1 ? TRACER_RS_LAST_BOUNCE_BIT : 0) |
-	  ((mProgramSignals & TRACER_PS_NO_PDF_BIT) ? TRACER_RS_NO_PDF_BIT : 0) |
-	  ((mProgramSignals & TRACER_PS_NO_RR_BIT) ? TRACER_PS_NO_RR_BIT : 0),
-	.RayCount = effRayCount,
-	.RaysPerPixelPow2 = raysPerPixelPow2,
-	.MaterialBuffer = mObjectBuffers.MaterialBuffer.Gpu(),
-	.RayBuffer = rt.Buffers[RT_PCD_RAY_BUF],
-	.SkyColor = mSkyColor,
-	.SunData = mSunData
-      };
+
       coarseF = TRACER_RS_COARSE_FACTOR;
       // how many threads to cover all rays? ceil(effRayCount / coarse factor)
       totalThreads = (effRayCount + coarseF - 1) / coarseF;
       wgc.x = (totalThreads + TRACER_RS_WORKGROUP_SIZE - 1) / TRACER_RS_WORKGROUP_SIZE;
       pCmdBuf->StageBarrier(&computeBarrier, 1);
       pCmdBuf->SetKernel(mShaderKernel);
-      pCmdBuf->PushConstants(&rs);
       pCmdBuf->Dispatch(wgc);
       pCmdBuf->StageBarrier(&computeBarrier, 1);
     }

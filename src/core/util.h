@@ -231,12 +231,9 @@ namespace Util {
     }
     template<typename Allocator> inline void
     Free(Allocator *pAllocator) {
-      pAllocator->template
-	Free(V_(this->Data));
-      pAllocator->template
-	Free(V_(this->Generations));
-      pAllocator->template
-	Free(V_(this->OpenSlots));
+      pAllocator->Free(V_(this->Data));
+      pAllocator->Free(V_(this->Generations));
+      pAllocator->Free(V_(this->OpenSlots));
       *this = {};
     }
   };
@@ -304,14 +301,10 @@ namespace Util {
     }
     template<typename Allocator> inline void
     Free(Allocator *pAllocator) {
-      pAllocator->template
-	Free(V_(this->Data));
-      pAllocator->template
-	Free(V_(this->Meta));
-      pAllocator->template
-	Free(V_(this->Generations));
-      pAllocator->template
-	Free(V_(this->OpenSlots));
+      pAllocator->Free(V_(this->Data));
+      pAllocator->Free(V_(this->Meta));
+      pAllocator->Free(V_(this->Generations));
+      pAllocator->Free(V_(this->OpenSlots));
       *this = {};
     }
   };
@@ -360,10 +353,8 @@ namespace Util {
     }
     template<typename Allocator> inline void
     Free(Allocator *pAllocator) {
-      pAllocator->template
-	Free(V_(this->Generations));
-      pAllocator->template
-	Free(V_(this->OpenSlots));
+      pAllocator->Free(V_(this->Generations));
+      pAllocator->Free(V_(this->OpenSlots));
       *this = {};
     }
   };
@@ -382,9 +373,10 @@ namespace Util {
 
     template<typename Allocator> inline void
     Free(Allocator *pAllocator) {
-      pAllocator->template
-	Free(V_(this->Data));
-      *this = {};
+      // pAllocator->template
+      //Free(V_(this->Data));
+      pAllocator->Free(V_(this->Data));
+      *this = Stack{};
     }
 
     inline T*

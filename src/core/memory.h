@@ -96,10 +96,13 @@ extern "C" {
   };
 
   // From https://github.com/yuikns/intrin/blob/master/intrin_x86.h
-  static __inline__ __attribute__((always_inline)) unsigned char _BitScanReverse(unsigned long *const Index, const unsigned long Mask) {
+#if __GNUC__
+  static __inline__ __attribute__((always_inline))
+  unsigned char _BitScanReverse(unsigned long *const Index, const unsigned long Mask) {
     __asm__("bsrl %[Mask], %[Index]" : [Index] "=r"(*Index) : [Mask] "mr"(Mask));
     return Mask ? 1 : 0;
   }
+#endif 
   
   static inline u32
   Lzcntu32(u32 value) {
@@ -915,7 +918,9 @@ extern "C" {
       tmp	    = a[0].FL & ((u32)0xffffffff << (fl));
       if (!tmp) {
 	//ran out of memory
-	return (OffsetAllocation){0xffffffff, 0xffffffff/*, 0*/};
+	OffsetAllocation ret;
+	ret.Offset = ret.Node = 0xffffffff;
+	return ret;
       }
       aa = Lzcntu32(tmp);
       fl    = 31 - aa;
@@ -1010,7 +1015,10 @@ extern "C" {
     }
     ASSERT(header[0].Offset % 8 == 0,
 	   "::gpualloc error:: offset generated from alloc was not 8-byte aligned!");
-    return (OffsetAllocation){header[0].Offset, head/*, size*/};
+    OffsetAllocation ret;
+    ret.Offset = header[0].Offset;
+    ret.Node = head;
+    return ret;
   }
 
   static inline void
