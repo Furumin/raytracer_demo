@@ -1,7 +1,4 @@
-*.spv
 *.glb
 *.gltf
 *.gdb_history
-*.o
 *.exe
-*.lib
