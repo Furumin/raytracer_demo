@@ -47,7 +47,7 @@ msvc_build
 cmd
 "C:\Program Files\Microsoft Visual Studio\[バージョン番号]\Community\VC\Auxiliary\Build\vcvars64"
 ```
-[バージョン番号]は、バージョンによって異なりますが基本的にはどのバージョンでも問題ありません。また、Visual Studioのインストールパスがデフォルトでない場合、`C:\Program Files\`をインソールパスに入れ替えてください。
+[バージョン番号]は、バージョンによって異なりますが`Microsoft Visual Studio`フォルダー内のフォルダーの名前となります。また、Visual Studioのインストールパスがデフォルトでない場合、`C:\Program Files\`をインソールパスに入れ替えてください。
 
 デフォルトでreleaseモードでコンパイルします。devモードでコンパイルがしたい場合は、g++で`build dev`を実行してください。
 
