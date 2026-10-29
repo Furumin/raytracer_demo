@@ -14,26 +14,16 @@ namespace Util {
   enum {
     IO_FILE_READ  = 0x1,
     IO_FILE_WRITE = 0x2,
-  };
-
-  enum {
     IO_FILE_SHARE_READ = 0x4,
-    IO_FILE_SHARE_WRITE = 0x8
-  };
-
-  enum {
+    IO_FILE_SHARE_WRITE = 0x8,
     IO_CREATE = 0x10,
     IO_CREATE_ONLY = 0x20,
     IO_OPEN = 0x40,
-    IO_OPEN_ONLY = 0x80
-  };
-
-  enum {
+    IO_OPEN_ONLY = 0x80,
     IO_FLAG_OVERLAPPED = 0x100,
     IO_FLAG_NO_BUFFERING = 0x200,
     IO_FLAG_SEQ_ACCESS = 0x400,
     IO_FLAG_RANDOM_ACCESS = 0x800,
-
     IO_FLAG_MEM_MAP = 0x1000
   };
   
